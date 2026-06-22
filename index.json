@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "updated": "2026-06",
+  "chapters": [
+    {
+      "id": "01",
+      "title": "PVE Grundkonfiguration",
+      "path": "kapitel/01-grundkonfiguration.md",
+      "tags": ["installation", "post-install", "zfs", "storage", "netzwerk", "repository", "bios", "hardware", "nic", "arc", "lvm", "raidz", "mirror", "ashift", "ntp", "chrony", "postfix", "smtp"],
+      "summary": "Frische Installation und Grundkonfiguration von Proxmox VE: BIOS-Einstellungen, ZFS-Installation, Repository-Umstellung, Hosts-Datei, NTP, E-Mail-Benachrichtigungen, Storage und Netzwerkbr\u00fccken."
+    },
+    {
+      "id": "02",
+      "title": "Netzwerk & Clustering",
+      "path": "kapitel/02-netzwerk-clustering.md",
+      "tags": ["cluster", "corosync", "qdevice", "netzwerk", "bond", "lacp", "vlan", "2-node", "quorum", "split-brain", "pvecm", "knet", "link0", "link1"],
+      "summary": "Cluster-Aufbau mit Corosync, QDevice-Konfiguration (PBS als QDevice f\u00fcr 2-Node-Cluster), Netzwerkdesign, Bond/LACP und h\u00e4ufige Fehler."
+    },
+    {
+      "id": "03",
+      "title": "Backup-Strategien",
+      "path": "kapitel/03-backup-strategien.md",
+      "tags": ["pbs", "backup", "vzdump", "retention", "deduplizierung", "wiederherstellung", "gc", "garbage-collection", "qdevice", "datastore", "verifizierung", "plp", "enterprise-ssd"],
+      "summary": "PBS-Installation, Backup-Jobs, Retention-Policies, Verifizierung, granulare Wiederherstellung und PBS als QDevice f\u00fcr 2-Node-Cluster."
+    },
+    {
+      "id": "04",
+      "title": "Datacenter Manager (PDM)",
+      "path": "kapitel/04-datacenter-manager.md",
+      "tags": ["pdm", "datacenter-manager", "multi-site", "migration", "cross-cluster", "live-migration", "remote-cluster"],
+      "summary": "PDM-Installation, Cluster-Registrierung, Cross-Cluster-Live-Migration und zentrale Benutzerverwaltung."
+    },
+    {
+      "id": "05",
+      "title": "Sicherheit & Hardening",
+      "path": "kapitel/05-sicherheit-hardening.md",
+      "tags": ["ssh", "firewall", "2fa", "totp", "zertifikate", "lets-encrypt", "acme", "rollen", "berechtigungen", "api-token", "hardening", "pveam", "pveum"],
+      "summary": "SSH-H\u00e4rtung, Proxmox Firewall, 2FA/TOTP, TLS-Zertifikate, Rollen & Berechtigungen und API-Token."
+    },
+    {
+      "id": "06",
+      "title": "Monitoring & Alerting",
+      "path": "kapitel/06-monitoring-alerting.md",
+      "tags": ["monitoring", "grafana", "influxdb", "prometheus", "zabbix", "alerting", "benachrichtigungen", "smart", "backup-fehler", "notifications", "gotify"],
+      "summary": "Native PVE-Benachrichtigungen, InfluxDB+Grafana-Setup, Prometheus-Integration und Zabbix-Anbindung."
+    }
+  ]
+}
