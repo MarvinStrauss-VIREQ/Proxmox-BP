@@ -8,48 +8,31 @@
 
 ## Wann anwenden?
 
-> **Dieses Kapitel ist relevant, wenn:**
-> - ein neuer Server mit Proxmox VE frisch installiert werden soll,
-> - ein bestehender Node nach einer Neuinstallation grundkonfiguriert werden muss,
-> - ein neuer Cluster-Node vorbereitet wird, **bevor** er dem Cluster beitritt (→ Kapitel 2).
+> - Neuer Server wird mit Proxmox VE frisch installiert
+> - Bestehender Node nach Neuinstallation grundkonfiguriert
+> - Neuer Cluster-Node wird vorbereitet, **bevor** er dem Cluster beitritt (→ Kapitel 2)
 >
-> **Dieses Kapitel deckt nicht ab:**
-> - Cluster-Konfiguration und Netzwerkdesign → Kapitel 2
-> - Backup-Einrichtung und PBS-Integration → Kapitel 3
-> - Firewall, SSH-Hardening, 2FA → Kapitel 5
+> Nicht abgedeckt: Cluster-Setup → Kap. 2 · Backup/PBS → Kap. 3 · SSH/Firewall/2FA → Kap. 5
 
 ---
 
 ## Überblick
 
-Proxmox VE wird direkt auf bare-metal Hardware installiert (Typ-1-Hypervisor). Die Grundkonfiguration umfasst vier Phasen:
+Proxmox VE wird direkt auf bare-metal Hardware installiert (Typ-1-Hypervisor). Die Installation läuft in zwei Phasen:
 
-1. **Hardware-Vorprüfung** – BIOS, RAID-Controller und NIC-Kompatibilität sicherstellen
-2. **Installation** – Dateisystem-Entscheidung, ISO-Boot, Ersteinrichtung
-3. **Post-Install** – Repositories, Updates, Hosts-Datei, Zeitsync, E-Mail, ZFS-ARC
-4. **Storage & Netzwerk** – Speicher und Netzwerkbrücken für VMs vorbereiten
+1. **Installer** – Disk, Standort, Passwort, Netzwerk
+2. **Web-UI Setup** – Netzwerk anpassen, Post-Install, Repositories
 
-> **Hyper-V-Vergleich:** PVE entspricht dem Hyper-V Server (Core) – kein vollständiges Windows, nur die Hypervisor-Rolle mit Web-UI statt RSAT. Die Linux Bridge `vmbr0` entspricht dem virtuellen Switch in Hyper-V.
+> **Hyper-V-Vergleich:** PVE entspricht dem Hyper-V Server (Core) – nur die Hypervisor-Rolle, Web-UI statt RSAT. Die Linux Bridge `vmbr0` ist der virtuelle Switch.
 
 ---
 
 ## Voraussetzungen
 
-**Hardware:**
-- 64-Bit-CPU mit Intel VT-x oder AMD-V
-- Minimum 8 GB RAM (2 GB OS + 1 GB/TB ZFS ARC + VM-RAM)
-- Minimum 2 × SSD/HDD für ZFS Mirror (Produktion)
-- Mindestens 1 × Intel-NIC
-
-**Informationen bereithalten:**
-- Statische IP, Subnetzmaske, Gateway, DNS
-- Hostname und FQDN (z. B. `pve01.firma.local`)
-- Root-Passwort, E-Mail für Alerts
-
-**Entscheidungen vorab:**
-- [ ] ZFS (Produktion) oder ext4/LVM-Thin (Testlab)?
-- [ ] Hardware-RAID-Controller verbaut? → HBA IT-Mode erforderlich (Abschnitt 1.2)
-- [ ] Broadcom-NIC? → vorab validieren (Abschnitt 1.3)
+- Statische IP, Subnetz, Gateway, DNS bereit
+- Hostname im FQDN-Format definiert (z. B. `pve01.kunde.local`)
+- Passwort für Bitwarden vorbereitet
+- iDRAC / iLO vorab konfiguriert und erreichbar
 
 ---
 
@@ -65,13 +48,11 @@ Proxmox VE wird direkt auf bare-metal Hardware installiert (Typ-1-Hypervisor). D
 | Hyperthreading | **Aktiviert** | CPU-Durchsatz für VMs |
 | C-States | Optional deaktivieren | Latenz-sensitive Workloads |
 
-> ⚠️ **Dell iDRAC / HP iLO:** Remote-Management vor PVE-Installation konfigurieren.
+> ⚠️ **Dell iDRAC / HP iLO / Supermicro IPMI:** Vor der PVE-Installation konfigurieren. Nach der Installation ist der physische Zugang meistens nur noch darüber sinnvoll möglich.
 
-### 1.2 RAID-Controller → HBA IT-Mode (kritisch für ZFS)
+### 1.2 RAID-Controller → HBA IT-Mode (bei ZFS zwingend)
 
-> ❌ **Hardware-RAID-Controller sind mit ZFS inkompatibel.** ZFS benötigt direkten Zugriff auf jede physische Disk für Checksummen, S.M.A.R.T. und Self-Healing. Hardware-RAID versteckt die Disks hinter einer logischen Einheit – das führt bei Fehlerfällen zu Datenverlust.
-
-**Lösung: Controller auf HBA IT-Mode umflashen.**
+> ❌ Hardware-RAID-Controller sind mit ZFS inkompatibel — ZFS braucht direkten Disk-Zugriff für Checksummen, S.M.A.R.T. und Self-Healing. Nur relevant wenn ZFS verwendet wird (→ Abschnitt 2.3).
 
 | Controller | Chip | Konvertierungspfad |
 |-----------|------|-------------------|
@@ -83,92 +64,149 @@ Proxmox VE wird direkt auf bare-metal Hardware installiert (Typ-1-Hypervisor). D
 | Broadcom / Avago HBA | – | Meist bereits IT-Mode |
 
 ```bash
-# Controller identifizieren:
 lspci -nn | grep -iE "raid|sas|storage"
-# [1000:xxxx] = LSI/Broadcom, [1028:xxxx] = Dell
+# [1000:xxxx] = LSI/Broadcom · [1028:xxxx] = Dell
 ```
 
 ### 1.3 NIC-Kompatibilität
 
-| NIC-Familie | Treiber | Empfehlung |
-|------------|---------|----------|
+| NIC | Treiber | Empfehlung |
+|-----|---------|----------|
 | Intel i210, i350 (1G) | `igb` | ✅ Erste Wahl |
 | Intel X540, X550 (10G) | `ixgbe` | ✅ Empfohlen |
-| Intel X710 (10/25G) | `i40e` | ✅ Gut für SDN/VLAN |
+| Intel X710 (10/25G) | `i40e` | ✅ SDN/VLAN |
 | Broadcom BCM5719+ | `bnx2x` | ⚠️ Vorab validieren |
 | Mellanox ConnectX-4/5 | `mlx5_en` | ✅ 25G/100G |
 | Realtek RTL8111/8125 | `r8169` | ⚠️ Nur Management |
 
 ---
 
-## 2. Proxmox VE Installation
+## 2. Installation
 
-### 2.1 ISO und USB
+### 2.1 ISO herunterladen und USB erstellen
 
 ```
-https://www.proxmox.com/de/downloads/proxmox-virtual-environment/iso
+ISO-Download: https://www.proxmox.com/en/downloads/proxmox-virtual-environment/iso
 ```
 
 ```bash
-# Linux (X = USB-Gerät, kein Suffix):
+# Linux:
 sudo dd if=proxmox-ve_9.2-1.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 ```
-# Windows: Rufus → DD-Modus (NICHT ISO-Modus!)
-# Alternativ: Ventoy
+# Windows: Rufus → DD-Modus (NICHT ISO-Modus!) · Alternativ: Ventoy
 ```
 
-### 2.2 Dateisystem-Entscheidung
+### 2.2 Installer-Typ wählen
 
-| Kriterium | ZFS (Mirror/RAIDZ) | ext4/LVM-Thin |
-|-----------|-------------------|---------------|
-| Datensicherheit | ✅ Checksummen, Self-Healing | Standard |
-| RAM-Bedarf | +1 GB/TB (ARC) | Minimal |
-| Snapshots | ✅ Nativ, schnell | Via LVM |
-| Kompression | ✅ lz4, transparent | Nein |
-| **Empfehlung** | **Produktion** | **Testlab / <16 GB RAM** |
+Nach dem Boot vom USB erscheinen zwei Optionen:
 
-| ZFS-Konfig | Disks | Ausfall toleriert | Empfehlung |
-|-----------|-------|-----------------|----------|
-| Mirror | 2 | 1 Disk | ✅ Standard |
-| RAIDZ-1 | ≥3 | 1 Disk | 3–5 Disks |
-| RAIDZ-2 | ≥4 | 2 Disks | ✅ Ab 4 Disks |
+| Option | Wann verwenden? |
+|--------|----------------|
+| **Install Proxmox VE (Graphical)** | Standard — bei normaler Hardware |
+| **Install Proxmox VE (Terminal UI)** | Fallback — bei sehr alter oder sehr neuer Hardware, wenn der Graphical-Installer nicht korrekt dargestellt wird |
 
-> 💡 **ashift:** Moderne SSDs/HDDs → `ashift=12`. Nicht nachträglich änderbar!
+### 2.3 EULA akzeptieren
 
-### 2.3 Installationsschritte
+### 2.4 Zieldisk auswählen
 
-1. Von USB booten → **"Install Proxmox VE (Graphical)"**
-2. EULA akzeptieren
-3. Target Disk(s): ZFS Mirror, `ashift=12`
-4. Location: Germany · Europe/Berlin · Keyboard: de
-5. Passwort + E-Mail setzen
-6. Netzwerk: Management-NIC, Hostname `pve01.firma.local`, IP/Gateway/DNS
-7. → **Install**, USB entfernen, Neustart
+**Empfehlung:** NVMe SSD als OS-Disk bevorzugen.
+
+**Dateisystem-Entscheidung:**
+
+| Szenario | Dateisystem | Begründung |
+|----------|-------------|-----------|
+| **Einzelne OS-Disk** | **ext4** | ZFS auf einer Disk bietet keine Redundanz, belegt aber RAM für ARC — ext4 ist effizienter |
+| **Zwei gleichartige Disks** | **ZFS Mirror** | Redundanz für OS und VM-Storage in einem, Self-Healing, schnelle Snapshots |
+| **Drei oder mehr Disks** | **ZFS RAIDZ-1/2** | RAIDZ-1 ab 3 Disks, RAIDZ-2 ab 4 Disks |
+
+> 💡 **VM-Storage separat:** Auch wenn die OS-Disk ext4 läuft, kann ein dedizierter ZFS-Pool für VM-Disks nachträglich eingerichtet werden (→ Abschnitt 5.2). Das ist die empfohlene Kombination bei nur einer NVMe OS-Disk und separaten Storage-Disks.
+
+> 💡 **ashift bei ZFS:** Moderne SSDs/NVMe → `ashift=12`. Dieser Wert lässt sich nachträglich **nicht** ändern.
+
+### 2.5 Standort, Zeitzone & Tastatur
 
 ```
-https://192.168.1.10:8006  →  root / Linux PAM
+Country:   Germany
+Timezone:  Europe/Berlin
+Keyboard:  German
 ```
+
+### 2.6 Root-Passwort & E-Mail
+
+- Sicheres Passwort vergeben und **sofort in Bitwarden hinterlegen**
+- E-Mail-Adresse für System-Alerts eintragen
+
+> 💡 **Zentrale Alert-Adresse:** Für Kundenprojekte empfiehlt sich eine dedizierte Postfach-Adresse (z. B. `proxmox-alerts@vireq.com`) statt individueller Techniker-Adressen — so gehen keine Benachrichtigungen verloren wenn jemand im Urlaub ist.
+
+### 2.7 Management-Netzwerk konfigurieren
+
+- **Interface:** Zunächst eine Netzwerkkarte wählen, um nach der Installation Zugriff auf die Web-UI zu haben. Weitere NICs werden im Web-UI nachkonfiguriert (→ Abschnitt 3.2)
+- **Hostname:** Im FQDN-Format angeben: `pve01.kunde.local`
+- **IP-Adresse:** Entweder IPv4 **oder** IPv6 angeben — **nicht beide gleichzeitig**
+- Alle Netzwerkeinstellungen können nach der Installation im Web-UI angepasst werden
+
+### 2.8 Zusammenfassung & Installation
+
+- Alle Einstellungen prüfen
+- ✅ **"Automatically reboot after successful installation"** ankreuzen
+- → **Install** klicken, USB-Stick nach dem Neustart entfernen
 
 ---
 
-## 3. Post-Install-Konfiguration
+## 3. Web-UI Setup
+
+### 3.1 Anmelden
+
+```
+https://<IP-Adresse>:8006
+Benutzer: root
+Realm:    Linux PAM standard authentication
+```
+
+> Der Browser zeigt eine Zertifikatwarnung (selbstsigniertes Zertifikat) — das ist bei der Erstinstallation normal. Eigenes Zertifikat → Kapitel 5.
+
+### 3.2 Netzwerk konfigurieren
+
+**Einzelne Netzwerkkarte:** Keine Änderungen notwendig — `vmbr0` läuft bereits auf der gewählten NIC.
+
+**Zwei Netzwerkkarten (Redundanz via Bond):**
+
+```
+PVE Web-UI: Node → Network → Create → Linux Bond
+
+Name:        bond0
+Bond Mode:   active-backup   ← Standard, funktioniert ohne Switch-Konfiguration
+Bond slaves: eno1 eno2        ← beide physischen NICs als Slaves
+```
+
+```
+Anschließend vmbr0 anpassen:
+Bridge ports: bond0           ← statt der einzelnen NIC
+```
+
+> ⚠️ Netzwerkänderungen erst mit **Apply Configuration** aktivieren. Bei Remote-Zugriff: iDRAC/iLO bereithalten.
+
+> 💡 **Weitere Bond-Modi** (z. B. 802.3ad/LACP für höhere Bandbreite) erfordern Switch-seitige Konfiguration. Übersicht: [PVE Network Configuration – Linux Bond](https://pve.proxmox.com/wiki/Network_Configuration#sysadmin_network_bond)
+
+---
+
+## 4. Post-Install-Konfiguration
 
 ```bash
 ssh root@192.168.1.10
 ```
 
-### 3.1 Systemzustand prüfen
+### 4.1 Systemzustand prüfen
 
 ```bash
 pveversion -v
-zpool status && zpool list
 ip addr show
 ping -c 3 8.8.8.8
 ```
 
-### 3.2 Repository umstellen (No-Subscription)
+### 4.2 Repository umstellen (No-Subscription)
 
 > Ohne Umstellung schlägt `apt update` mit `401 Unauthorized` fehl.
 
@@ -191,9 +229,9 @@ EOF
 apt update
 ```
 
-> **PVE 8.x:** `trixie` → `bookworm`, `ceph-squid` → `ceph-quincy`
+> **PVE 8.x (Bookworm):** `trixie` → `bookworm`, `ceph-squid` → `ceph-quincy`
 
-### 3.3 System aktualisieren
+### 4.3 System aktualisieren
 
 ```bash
 apt full-upgrade -y
@@ -201,14 +239,14 @@ reboot
 pveversion -v
 ```
 
-### 3.4 Hosts-Datei konfigurieren ⚠️ (Cluster-kritisch)
+### 4.4 Hosts-Datei konfigurieren ⚠️ (Cluster-kritisch)
 
-> Hostname **muss** auf Management-IP zeigen, nie auf `127.0.x.x`. Falscher Eintrag = Cluster-Join schlägt fehl.
+> Hostname **muss** auf Management-IP zeigen — nie auf `127.0.x.x`. Falscher Eintrag = Cluster-Join schlägt fehl.
 
 ```bash
 cat > /etc/hosts << 'EOF'
 127.0.0.1       localhost
-192.168.1.10    pve01.firma.local pve01
+192.168.1.10    pve01.kunde.local pve01
 
 ::1             localhost ip6-localhost ip6-loopback
 ff02::1         ip6-allnodes
@@ -216,30 +254,35 @@ ff02::2         ip6-allrouters
 EOF
 
 hostname --fqdn
-# Muss lauten: pve01.firma.local
+# Muss lauten: pve01.kunde.local
 ```
 
-### 3.5 Zeitsynchronisation
+### 4.5 Zeitsynchronisation
 
 ```bash
 chronyc tracking
 timedatectl set-timezone Europe/Berlin
 
-# Eigenen NTP-Server (in /etc/chrony/chrony.conf):
-server ntp.firma.local iburst prefer
+# Eigener NTP-Server (optional, in /etc/chrony/chrony.conf):
+server ntp.vireq.local iburst prefer
 systemctl restart chrony
 ```
 
-### 3.6 E-Mail-Benachrichtigungen
+### 4.6 E-Mail-Benachrichtigungen (SMTP)
 
-**Via Web-UI (PVE 9.x):** `Datacenter → Notifications → Add → SMTP`
+**Via Web-UI (PVE 9.x – empfohlen):**
+```
+Datacenter → Notifications → Add → SMTP
+Host: smtp.office365.com · Port: 587 · Mode: STARTTLS
+Username/Passwort · From/To eintragen
+```
 
-**Via CLI (Office 365):**
+**Via CLI (Postfix + Office 365):**
 ```bash
 apt install -y libsasl2-modules
 
 cat > /etc/postfix/sasl_passwd << 'EOF'
-[smtp.office365.com]:587 alert@firma.de:PASSWORT
+[smtp.office365.com]:587 proxmox-alerts@vireq.com:PASSWORT
 EOF
 postmap /etc/postfix/sasl_passwd
 chmod 600 /etc/postfix/sasl_passwd*
@@ -253,36 +296,35 @@ smtp_tls_security_level = encrypt
 EOF
 
 systemctl restart postfix
-echo "Test" | mail -s "[PVE] Test" admin@firma.de
+echo "Test" | mail -s "[PVE] Test $(hostname)" proxmox-alerts@vireq.com
 ```
 
-### 3.7 ZFS ARC begrenzen
+### 4.7 ZFS ARC begrenzen (nur bei ZFS-Installation)
 
-**Formel:** `RAM = 2 GB OS + 1 GB/TB ARC + VM-RAM`
+> Nicht nötig bei ext4-Installation.
+
+**Formel:** `RAM = 2 GB OS + 1 GB/TB ZFS-Pool + VM-RAM`
 
 ```bash
-# Aktuellen Verbrauch prüfen:
+# Aktuellen ARC prüfen:
 awk '/^size/{printf "ARC: %.1f GB\n", $3/1073741824}' /proc/spl/kstat/zfs/arcstats
 
-# ARC auf 4 GB begrenzen (dauerhaft):
+# Auf 4 GB begrenzen (Beispiel):
 cat > /etc/modprobe.d/zfs.conf << 'EOF'
 options zfs zfs_arc_max=4294967296
 options zfs zfs_arc_min=1073741824
 EOF
 update-initramfs -u
-
-# Sofort (temporär):
-echo 4294967296 > /sys/module/zfs/parameters/zfs_arc_max
 ```
 
-### 3.8 Subscription-Warnung entfernen (optional)
+### 4.8 Subscription-Warnung entfernen (optional)
 
 ```bash
 sed -i.bak "s/if (data.status !== 'Active')/if (false)/g" \
   /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 systemctl restart pveproxy
 
-# APT-Hook (automatisch nach Updates):
+# APT-Hook – automatisch nach Updates:
 cat > /etc/apt/apt.conf.d/99-proxmox-nosubwarn << 'EOF'
 DPkg::Post-Invoke {
   "sed -i.bak 's/if (data.status !== .Active.)/if (false)/g' \
@@ -294,37 +336,40 @@ EOF
 
 ---
 
-## 4. Storage-Konfiguration
+## 5. Storage-Konfiguration
 
-### 4.1 Standard-Storage
+### 5.1 Standard-Storage nach Installation
 
-| Name | Typ | Inhalte | Einsatz |
-|------|-----|---------|---------|
-| `local` | Directory `/var/lib/vz` | ISOs, Templates, Backups | Verwaltung |
-| `local-lvm` | LVM-Thin | VM-Disks, Container | VM-Storage |
+| Storage | Typ | Inhalte | Bei ext4-OS |
+|---------|-----|---------|------------|
+| `local` | Directory `/var/lib/vz` | ISOs, Templates, Backups | ✅ vorhanden |
+| `local-lvm` | LVM-Thin | VM-Disks, Container | ✅ vorhanden |
 
-> ⚠️ Bei ZFS-Root-Installation: kein `local-lvm` – separaten ZFS-Pool anlegen (Abschnitt 4.2).
+> Bei **ZFS-OS-Installation** gibt es kein `local-lvm` — VM-Storage läuft direkt auf ZFS-Datasets.
 
-### 4.2 ZFS-Pool für VMs erstellen
+### 5.2 Separaten ZFS-Pool für VMs anlegen (empfohlen bei ext4-OS)
 
-> Immer `/dev/disk/by-id/` verwenden – nie `/dev/sdX`!
+> Immer `/dev/disk/by-id/` verwenden — nie `/dev/sdX`!
 
 ```bash
+# Verfügbare Disks:
 lsblk -o NAME,SIZE,MODEL,SERIAL,TYPE
 ls -l /dev/disk/by-id/ | grep -v part
 
+# ZFS Mirror aus zwei Storage-Disks:
 zpool create -o ashift=12 vmpool mirror \
-  /dev/disk/by-id/DISK1-SERIAL \
-  /dev/disk/by-id/DISK2-SERIAL
+  /dev/disk/by-id/DISK1 \
+  /dev/disk/by-id/DISK2
 
 zfs set compression=lz4 vmpool
 zpool status vmpool
 
+# In PVE registrieren:
 pvesm add zfspool vmpool --pool vmpool --content images,rootdir
 # Web-UI: Datacenter → Storage → Add → ZFS
 ```
 
-### 4.3 NFS-Share einbinden
+### 5.3 NFS-Share einbinden
 
 ```bash
 apt install -y nfs-common
@@ -339,61 +384,18 @@ pvesm add nfs nas-backup \
 
 ---
 
-## 5. Grundlegende Netzwerkkonfiguration
-
-### 5.1 Linux Bridge verstehen
-
-```
-LAN
- │
-[eno1]      ← Physische NIC (kein IP)
- │
-[vmbr0]     ← Bridge (trägt Management-IP)
- ├ VM 100
- ├ VM 101
- └ CT 200
-```
-
-> **Hyper-V:** `vmbr0` = External Virtual Switch. NIC ist Uplink ohne eigene IP.
-
-### 5.2 VLAN-fähige Bridge (`/etc/network/interfaces`)
-
-```
-auto lo
-iface lo inet loopback
-
-auto eno1
-iface eno1 inet manual
-
-auto vmbr0
-iface vmbr0 inet static
-    address 192.168.1.10/24
-    gateway 192.168.1.1
-    bridge-ports eno1
-    bridge-stp off
-    bridge-fd 0
-    bridge-vlan-aware yes
-    bridge-vids 2-4094
-
-dns-nameservers 192.168.1.1
-```
-
-```bash
-ifreload -a
-ip addr show vmbr0
-```
-
----
-
 ## Best Practices
 
-✅ ZFS Mirror/RAIDZ für Produktionssysteme — immer `/dev/disk/by-id/`  
-✅ ARC begrenzen bevor VMs starten — `apt full-upgrade` (nicht `upgrade`)  
-✅ Hosts-Datei sofort prüfen — E-Mail vor der ersten VM einrichten  
+✅ NVMe SSD als OS-Disk — ext4 bei einzelner Disk, ZFS Mirror bei zwei Disks  
+✅ VM-Storage immer auf separatem ZFS-Pool, auch wenn OS ext4 nutzt  
+✅ Passwort sofort in Bitwarden hinterlegen  
+✅ Netzwerk: zunächst eine NIC, Bond im Web-UI nachkonfigurieren  
+✅ `apt full-upgrade` (nicht `apt upgrade`) — Hosts-Datei vor Cluster-Join prüfen  
 ✅ iDRAC/iLO vor PVE-Installation konfigurieren
 
-⚠️ Subscription-Warnung-Patch wird nach Updates zurückgesetzt → APT-Hook nutzen  
-⚠️ SSH-Root-Login nach Grundkonfiguration absichern (→ Kapitel 5)
+⚠️ Bond active-backup ist der sichere Standard (kein Switch-Config nötig) — 802.3ad/LACP nur mit gepflegter Switch-Konfiguration  
+⚠️ IPv4 **oder** IPv6 im Installer angeben — nicht beide  
+⚠️ Subscription-Warnung-Patch wird nach Updates zurückgesetzt → APT-Hook nutzen
 
 ❌ Hardware-RAID mit ZFS — Realtek für VM-Traffic — `127.0.1.1` in `/etc/hosts`
 
@@ -404,25 +406,25 @@ ip addr show vmbr0
 **`401 Unauthorized` bei apt update**
 ```
 Ursache: Enterprise-Repo aktiv, keine Subscription.
-Lösung:  Abschnitt 3.2 – No-Subscription-Repo aktivieren.
+Lösung:  Abschnitt 4.2 – No-Subscription-Repo aktivieren.
 ```
 
 **`hostname --fqdn` gibt `localdomain` zurück**
 ```
-Ursache: /etc/hosts falsch konfiguriert (127.0.1.1).
-Lösung:  Abschnitt 3.4 – Management-IP eintragen.
+Ursache: /etc/hosts falsch konfiguriert.
+Lösung:  Abschnitt 4.4 – Management-IP eintragen.
 ```
 
-**ZFS ARC verdrängt VM-RAM, VMs swappen**
+**Web-UI nicht erreichbar nach Netzwerk-Änderung**
 ```
-Ursache: Kein ARC-Limit gesetzt.
-Lösung:  Abschnitt 3.7 – zfs_arc_max setzen.
+Ursache: Bond-Konfiguration inkorrekt angewendet.
+Lösung:  Über iDRAC/iLO einloggen, /etc/network/interfaces prüfen.
 ```
 
-**`zpool status` zeigt DEGRADED nach Neustart**
+**ZFS ARC verdrängt VM-RAM**
 ```
-Ursache: Pool mit /dev/sdX erstellt, Buchstabe geändert.
-Lösung:  zpool export vmpool && zpool import vmpool
+Ursache: Kein ARC-Limit gesetzt (nur bei ZFS-Installation relevant).
+Lösung:  Abschnitt 4.7 – zfs_arc_max setzen.
 ```
 
 ---
@@ -431,8 +433,9 @@ Lösung:  zpool export vmpool && zpool import vmpool
 
 | Ressource | URL |
 |-----------|-----|
+| PVE ISO Download | https://www.proxmox.com/en/downloads/proxmox-virtual-environment/iso |
 | PVE Admin Guide | https://pve.proxmox.com/pve-docs/pve-admin-guide.html |
-| PVE Wiki | https://pve.proxmox.com/wiki/Main_Page |
+| PVE Network Config (Bond-Modi) | https://pve.proxmox.com/wiki/Network_Configuration#sysadmin_network_bond |
 | OpenZFS Docs | https://openzfs.github.io/openzfs-docs/ |
 | HCL (NIC/HBA) | https://pve.proxmox.com/wiki/Hardware_Compatibility_List |
 | PERC H310 IT-Mode | https://fohdeesha.com/docs/perc.html |
