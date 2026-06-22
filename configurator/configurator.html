@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxmox BP – Konfigurator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f4;color:#1c1917;min-height:100vh;padding:2rem 1rem}
+.container{max-width:700px;margin:0 auto}
+h1{font-size:1.4rem;font-weight:600;margin-bottom:.3rem}
+.subtitle{color:#78716c;font-size:.9rem;margin-bottom:1.75rem}
+.card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:1.25rem 1.5rem;margin-bottom:1.25rem}
+.card h2{font-size:.9rem;font-weight:600;color:#44403c;margin-bottom:.75rem}
+.opts{display:grid;gap:.4rem}
+.opt{display:flex;align-items:flex-start;gap:.65rem;padding:.6rem .9rem;border:1.5px solid #e7e5e4;border-radius:7px;cursor:pointer;transition:all .15s}
+.opt:hover{border-color:#0891b2;background:#f0f9ff}
+.opt.sel{border-color:#0891b2;background:#e0f2fe}
+.opt input{margin-top:2px;accent-color:#0891b2}
+.lbl strong{display:block;font-size:.85rem;margin-bottom:.1rem}
+.lbl small{color:#78716c;font-size:.78rem}
+.btn{background:#0891b2;color:#fff;border:none;padding:.7rem 2rem;border-radius:8px;font-size:.95rem;cursor:pointer;margin-top:.75rem;width:100%}
+.btn:hover{background:#0e7490}
+.results{display:none}
+.results.show{display:block}
+.rc{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:1rem 1.25rem;margin-bottom:.75rem;display:flex;gap:1rem;align-items:flex-start}
+.rc.top{border-left:4px solid #f59e0b}
+.rc.rec{border-left:4px solid #0891b2}
+.badge{font-size:.7rem;font-weight:600;padding:.2rem .5rem;border-radius:20px;white-space:nowrap;margin-top:2px}
+.b-top{background:#fef3c7;color:#92400e}
+.b-rec{background:#e0f2fe;color:#0e7490}
+.rc h3{font-size:.88rem;font-weight:600;margin-bottom:.2rem}
+.rc p{font-size:.8rem;color:#78716c}
+.rc a{font-size:.8rem;color:#0891b2;text-decoration:none}
+.rc a:hover{text-decoration:underline}
+.reset{background:transparent;border:1px solid #d6d3d1;color:#78716c;padding:.45rem 1.25rem;border-radius:7px;cursor:pointer;margin-top:.75rem;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Proxmox BP – Konfigurator</h1>
+  <p class="subtitle">Beantworte die Fragen – du erhältst die passenden Kapitel für deine Situation.</p>
+
+  <div id="quiz">
+    <div class="card">
+      <h2>1. Aktueller Stand der Umgebung</h2>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="stand" value="neu"> <span class="lbl"><strong>Frische Installation</strong><small>Noch nichts eingerichtet</small></span></label>
+        <label class="opt"><input type="radio" name="stand" value="single"> <span class="lbl"><strong>Single Node läuft</strong><small>Kein Cluster, keine Redundanz</small></span></label>
+        <label class="opt"><input type="radio" name="stand" value="cluster"> <span class="lbl"><strong>Cluster vorhanden</strong><small>Mehrere Nodes bereits geclustert</small></span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. Geplante oder vorhandene Node-Anzahl</h2>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="nodes" value="1"> <span class="lbl"><strong>1 Node</strong><small>Single Server</small></span></label>
+        <label class="opt"><input type="radio" name="nodes" value="2"> <span class="lbl"><strong>2 Nodes</strong><small>Brauche QDevice für Quorum</small></span></label>
+        <label class="opt"><input type="radio" name="nodes" value="3plus"> <span class="lbl"><strong>3 oder mehr Nodes</strong></span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Was möchtest du als nächstes einrichten? (Mehrfachauswahl)</h2>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" name="ziel" value="backup"> <span class="lbl"><strong>Backup-Strategie (PBS)</strong></span></label>
+        <label class="opt"><input type="checkbox" name="ziel" value="security"> <span class="lbl"><strong>Sicherheit & Härtung</strong><small>SSH, Firewall, 2FA</small></span></label>
+        <label class="opt"><input type="checkbox" name="ziel" value="monitoring"> <span class="lbl"><strong>Monitoring & Alerting</strong><small>Grafana, Benachrichtigungen</small></span></label>
+        <label class="opt"><input type="checkbox" name="ziel" value="multisite"> <span class="lbl"><strong>Multi-Site / Datacenter Manager</strong></span></label>
+      </div>
+    </div>
+
+    <button class="btn" onclick="showResults()">Empfehlungen anzeigen →</button>
+  </div>
+
+  <div class="results" id="results">
+    <div class="card" style="background:#f0f9ff;border-color:#bae6fd">
+      <h2>Deine Kapitel-Empfehlungen</h2>
+    </div>
+    <div id="rlist"></div>
+    <button class="reset" onclick="reset()">↩ Neu konfigurieren</button>
+  </div>
+</div>
+
+<script>
+const chapters = [
+  {id:"01",title:"PVE Grundkonfiguration",path:"../kapitel/01-grundkonfiguration.md",desc:"Installation, Post-Install, ZFS, Storage, Netzwerk-Grundlagen"},
+  {id:"02",title:"Netzwerk & Clustering",path:"../kapitel/02-netzwerk-clustering.md",desc:"Corosync, QDevice (PBS als QDevice!), Cluster-Setup, Bond/LACP"},
+  {id:"03",title:"Backup-Strategien (PBS)",path:"../kapitel/03-backup-strategien.md",desc:"PBS-Installation, Backup-Jobs, Retention, Verifizierung, Wiederherstellung"},
+  {id:"04",title:"Datacenter Manager (PDM)",path:"../kapitel/04-datacenter-manager.md",desc:"PDM, Multi-Site, Cross-Cluster-Live-Migration"},
+  {id:"05",title:"Sicherheit & Hardening",path:"../kapitel/05-sicherheit-hardening.md",desc:"SSH-Härtung, Firewall, 2FA, Zertifikate, Rollen & API-Token"},
+  {id:"06",title:"Monitoring & Alerting",path:"../kapitel/06-monitoring-alerting.md",desc:"Grafana, InfluxDB, Prometheus, Zabbix, Alert-Schwellwerte"}
+];
+
+function showResults(){
+  const stand=document.querySelector('input[name="stand"]:checked')?.value;
+  const nodes=document.querySelector('input[name="nodes"]:checked')?.value;
+  const ziele=[...document.querySelectorAll('input[name="ziel"]:checked')].map(e=>e.value);
+  const s={"01":0,"02":0,"03":0,"04":0,"05":0,"06":0};
+  const notes={};
+  if(stand==="neu"){s["01"]+=10;notes["01"]="Startpunkt – hier beginnen";}
+  if(stand==="single"){s["02"]+=4;s["03"]+=4;}
+  if(stand==="cluster"){s["03"]+=4;s["05"]+=3;}
+  if(nodes==="2"){s["02"]+=10;s["03"]+=8;notes["02"]="QDevice für 2-Node konfigurieren";notes["03"]="PBS gleichzeitig als QDevice";}
+  if(nodes==="3plus"){s["02"]+=7;}
+  if(ziele.includes("backup")){s["03"]+=10;}
+  if(ziele.includes("security")){s["05"]+=10;}
+  if(ziele.includes("monitoring")){s["06"]+=10;}
+  if(ziele.includes("multisite")){s["04"]+=10;}
+  const sorted=Object.entries(s).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a).slice(0,5);
+  const list=document.getElementById("rlist");
+  list.innerHTML="";
+  sorted.forEach(([id],i)=>{
+    const ch=chapters.find(c=>c.id===id);
+    const isTop=i===0;
+    const note=notes[id]?`<em>${notes[id]}</em> &mdash; `:"";
+    list.innerHTML+=`<div class="rc ${isTop?'top':'rec'}"><div><span class="badge ${isTop?'b-top':'b-rec'}">Kap. ${ch.id}</span></div><div><h3>${ch.title}</h3><p>${note}${ch.desc}</p><a href="${ch.path}">→ Zum Kapitel</a></div></div>`;
+  });
+  document.getElementById("quiz").style.display="none";
+  document.getElementById("results").classList.add("show");
+}
+
+function reset(){
+  document.querySelectorAll('input[type=radio],input[type=checkbox]').forEach(e=>e.checked=false);
+  document.querySelectorAll('.opt').forEach(e=>e.classList.remove('sel'));
+  document.getElementById("quiz").style.display="block";
+  document.getElementById("results").classList.remove("show");
+}
+
+document.querySelectorAll('.opt').forEach(opt=>{
+  opt.addEventListener('click',()=>{
+    const inp=opt.querySelector('input');
+    if(inp.type==='radio')document.querySelectorAll(`input[name="${inp.name}"]`).forEach(r=>r.closest('.opt').classList.remove('sel'));
+    opt.classList.toggle('sel',inp.checked);
+  });
+});
+</script>
+</body>
+</html>
