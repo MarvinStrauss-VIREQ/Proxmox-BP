@@ -27,6 +27,36 @@ Proxmox VE wird direkt auf bare-metal Hardware installiert (Typ-1-Hypervisor). D
 
 ---
 
+## Post-Install-Checkliste
+
+> Schnellreferenz für jeden neuen Proxmox-Node — Schritt für Schritt abarbeiten.  
+> **⚠️** = cluster-kritisch · **🔗** = nur bei Cluster · *(optional)* = situationsabhängig
+
+| # | Aufgabe | Verweis |
+|---|---------|---------|
+| 1 | Lizenz eintragen **oder** No-Subscription-Repo aktivieren | → [4.2](#42-repository-umstellen-no-subscription) |
+| 2 | System-Update + Neustart: `apt full-upgrade -y && reboot` | → [4.3](#43-system-aktualisieren) |
+| 3 | System-Check: `pveversion -v`, `ip addr`, `ping 8.8.8.8` | → [4.1](#41-systemzustand-prüfen) |
+| 4 | Hostname + `/etc/hosts` prüfen ⚠️ | → [4.4](#44-hosts-datei-konfigurieren--cluster-kritisch) |
+| 5 | Netzwerk prüfen: Bond, vmbr0 | → [3.2](#32-netzwerk-konfigurieren) |
+| 6 | NTP / Zeitzone prüfen | → [4.5](#45-zeitsynchronisation) |
+| 7 | E-Mail-Benachrichtigungen einrichten | → [4.6](#46-e-mail-benachrichtigungen-smtp) |
+| 8 | 2FA für Root-User einrichten | → [Kap. 5](05-sicherheit-hardening.md) |
+| 9 | SSH Key-Auth einrichten | → [Kap. 5](05-sicherheit-hardening.md) |
+| 10 | Anmeldedaten in Bitwarden hinterlegen | – |
+| 11 | NinjaOne Agent installieren | → [Kap. 6](06-monitoring-alerting.md) |
+| 12 | ZFS Pool anlegen *(wenn zutreffend)* | → [5.2](#52-separaten-zfs-pool-für-vms-anlegen-empfohlen-bei-ext4-os) |
+| 13 | ZFS ARC begrenzen *(nur bei ZFS-OS)* | → [4.7](#47-zfs-arc-begrenzen-nur-bei-zfs-installation) |
+| 14 | S.M.A.R.T.-Monitoring einrichten | → [Kap. 6](06-monitoring-alerting.md) |
+| 15 | Backup konfigurieren | → [Kap. 3](03-backup-strategien.md) |
+| 16 | Firewall Basis aktivieren | → [Kap. 5](05-sicherheit-hardening.md) |
+| 17 | IOMMU im Kernel aktivieren *(optional, für PCI-Passthrough)* | → [4.9](#49-iommu-im-kernel-aktivieren-optional-für-pci-passthrough) |
+| 18 | No-Subscription Popup entfernen *(optional)* | → [4.8](#48-subscription-warnung-entfernen-optional) |
+| 19 | 🔗 Cluster-Join | → [Kap. 2](02-netzwerk-clustering.md) |
+| 20 | 🔗 PBS als QDevice + Backup-Server verbinden | → [Kap. 3](03-backup-strategien.md) |
+
+---
+
 ## Voraussetzungen
 
 - Statische IP, Subnetz, Gateway, DNS bereit
@@ -334,6 +364,42 @@ DPkg::Post-Invoke {
 EOF
 ```
 
+### 4.9 IOMMU im Kernel aktivieren (optional, für PCI-Passthrough)
+
+> Nur notwendig wenn VMs direkten Zugriff auf physische PCIe-Geräte erhalten sollen (z. B. GPU, HBA, NIC).  
+> BIOS-seitig muss IOMMU bereits aktiviert sein (→ Abschnitt 1.1).
+
+```bash
+# 1. GRUB-Kernel-Parameter setzen:
+nano /etc/default/grub
+
+# Zeile anpassen – Intel oder AMD, nur eines davon:
+GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt"
+# GRUB_CMDLINE_LINUX_DEFAULT="quiet amd_iommu=on iommu=pt"
+
+# 2. GRUB aktualisieren und neu starten:
+update-grub
+reboot
+
+# 3. Aktivierung prüfen:
+dmesg | grep -e DMAR -e IOMMU
+# Erwartete Ausgabe: "IOMMU enabled" oder "Intel-IOMMU: enabled"
+
+# 4. VFIO-Kernel-Module für PCI-Passthrough laden:
+echo "vfio
+vfio_iommu_type1
+vfio_pci" >> /etc/modules
+# Hinweis: vfio_virqfd ist ab Kernel 6.2 in vfio integriert (PVE 9.x / Trixie)
+update-initramfs -u -k all
+
+# 5. IOMMU-Gruppen nach Neustart prüfen:
+find /sys/kernel/iommu_groups/ -type l | sort -V
+```
+
+> **Hyper-V-Vergleich:** Entspricht Discrete Device Assignment (DDA) in Hyper-V — direkter PCIe-Durchgriff für GPU- und latenz-kritische Workloads.
+
+> 💡 **`iommu=pt`** (Pass-Through Modus) verbessert die Performance für Geräte, die *nicht* durchgereicht werden — immer empfohlen für Produktionssysteme.
+
 ---
 
 ## 5. Storage-Konfiguration
@@ -425,6 +491,12 @@ Lösung:  Über iDRAC/iLO einloggen, /etc/network/interfaces prüfen.
 ```
 Ursache: Kein ARC-Limit gesetzt (nur bei ZFS-Installation relevant).
 Lösung:  Abschnitt 4.7 – zfs_arc_max setzen.
+```
+
+**`dmesg | grep IOMMU` zeigt keine Ausgabe**
+```
+Ursache: IOMMU im BIOS nicht aktiviert oder falscher Kernel-Parameter.
+Lösung:  Abschnitt 1.1 (BIOS) + 4.9 (GRUB-Eintrag) prüfen.
 ```
 
 ---
