@@ -7,21 +7,21 @@
       "title": "PVE Grundkonfiguration",
       "path": "kapitel/01-grundkonfiguration.md",
       "tags": ["installation", "post-install", "zfs", "storage", "netzwerk", "repository", "bios", "hardware", "nic", "arc", "lvm", "raidz", "mirror", "ashift", "ntp", "chrony", "postfix", "smtp"],
-      "summary": "Frische Installation und Grundkonfiguration von Proxmox VE: BIOS-Einstellungen, ZFS-Installation, Repository-Umstellung, Hosts-Datei, NTP, E-Mail-Benachrichtigungen, Storage und Netzwerkbr\u00fccken."
+      "summary": "Frische Installation und Grundkonfiguration von Proxmox VE: BIOS-Einstellungen, ZFS-Installation, Repository-Umstellung, Hosts-Datei, NTP, E-Mail-Benachrichtigungen, Storage und Netzwerkbrücken."
     },
     {
       "id": "02",
       "title": "Netzwerk & Clustering",
       "path": "kapitel/02-netzwerk-clustering.md",
       "tags": ["cluster", "corosync", "qdevice", "netzwerk", "bond", "lacp", "vlan", "2-node", "quorum", "split-brain", "pvecm", "knet", "link0", "link1"],
-      "summary": "Cluster-Aufbau mit Corosync, QDevice-Konfiguration (PBS als QDevice f\u00fcr 2-Node-Cluster), Netzwerkdesign, Bond/LACP und h\u00e4ufige Fehler."
+      "summary": "Cluster-Aufbau mit Corosync, QDevice-Konfiguration (PBS als QDevice für 2-Node-Cluster), Netzwerkdesign, Bond/LACP und häufige Fehler."
     },
     {
       "id": "03",
       "title": "Backup-Strategien",
       "path": "kapitel/03-backup-strategien.md",
       "tags": ["pbs", "backup", "vzdump", "retention", "deduplizierung", "wiederherstellung", "gc", "garbage-collection", "qdevice", "datastore", "verifizierung", "plp", "enterprise-ssd"],
-      "summary": "PBS-Installation, Backup-Jobs, Retention-Policies, Verifizierung, granulare Wiederherstellung und PBS als QDevice f\u00fcr 2-Node-Cluster."
+      "summary": "PBS-Installation, Backup-Jobs, Retention-Policies, Verifizierung, granulare Wiederherstellung und PBS als QDevice für 2-Node-Cluster."
     },
     {
       "id": "04",
@@ -35,7 +35,7 @@
       "title": "Sicherheit & Hardening",
       "path": "kapitel/05-sicherheit-hardening.md",
       "tags": ["ssh", "firewall", "2fa", "totp", "zertifikate", "lets-encrypt", "acme", "rollen", "berechtigungen", "api-token", "hardening", "pveam", "pveum"],
-      "summary": "SSH-H\u00e4rtung, Proxmox Firewall, 2FA/TOTP, TLS-Zertifikate, Rollen & Berechtigungen und API-Token."
+      "summary": "SSH-Härtung, Proxmox Firewall, 2FA/TOTP, TLS-Zertifikate, Rollen & Berechtigungen und API-Token."
     },
     {
       "id": "06",
@@ -43,6 +43,13 @@
       "path": "kapitel/06-monitoring-alerting.md",
       "tags": ["monitoring", "grafana", "influxdb", "prometheus", "zabbix", "alerting", "benachrichtigungen", "smart", "backup-fehler", "notifications", "gotify"],
       "summary": "Native PVE-Benachrichtigungen, InfluxDB+Grafana-Setup, Prometheus-Integration und Zabbix-Anbindung."
+    },
+    {
+      "id": "07",
+      "title": "Firewall & IPsets",
+      "path": "kapitel/07-firewall-ipsets.md",
+      "tags": ["firewall", "ipset", "sicherheit", "pve-firewall", "cluster-fw", "host-fw", "corosync", "ceph", "ports", "whitelist", "policy", "drop", "3-node", "live-migration", "vnc", "spice"],
+      "summary": "Proxmox-native Firewall auf drei Ebenen (Datacenter/Host/VM), IPsets für Cluster-Nodes und Ceph-Netz, vollständige cluster.fw für 3-Node-Ceph-Cluster und 2-Node-Cluster, Aktivierung und Troubleshooting."
     }
   ]
 }
