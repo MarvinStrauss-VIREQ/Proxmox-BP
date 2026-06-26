@@ -51,7 +51,7 @@ Die Datacenter-Firewall ist der zentrale Einstiegspunkt: alle IPsets, globale Po
 
 - Proxmox VE 9.x Cluster aufgebaut und Corosync aktiv
 - SSH-Zugriff auf alle Nodes (oder physische Konsole als Fallback)
-- IP-Adressen aller Nodes auf **beiden** Netzwerken bekannt
+- IP-Adressen aller Nodes auf **allen drei** Netzwerken bekannt
 - IPMI / iDRAC / physische Konsolenverbindung als Fallback vorab prüfen
 
 > ⚠️ **Vor der Aktivierung:** Eigene Admin-IP in `mgmt-hosts` eintragen – sonst Selbst-Lock-out.
@@ -76,36 +76,37 @@ pve1
 ├── ens21 (enp6s21)  ┘       └─ VM-Traffic (Tagged VLANs)
 │
 ├── ens22 (enp6s22)  ┐
-│                    └──→  bond1 (balance-rr)  ──→  Ceph/Storage-Netz
-└── ens23 (enp6s23)  ┘
+│                    └──→  bond1 (balance-rr)  ──→  10.20.20.11/24
+└── ens23 (enp6s23)  ┘       └─ Ceph/Storage-Netz (eigenes Subnetz)
 ```
 
 ### Netzwerk-Übersicht pro Node
 
-| Interface | Typ | Bond-Modus | IP (pve1 / pve2 / pve3) | Funktion |
-|-----------|-----|-----------|--------------------------|---------|
-| `nic0` → `vmbr0` | Bridge | – | 172.30.7.31 / .32 / .33 | Web UI, Admin-SSH, Corosync Ring 1 |
-| `ens19` | Dedizierte NIC | – | 10.10.20.11 / .12 / .13 | Corosync Ring 0 |
-| `bond0` → `vmbr1` | Bond → Bridge | active-backup | – | VM-Traffic, VLAN-aware |
-| `bond1` | Bond | balance-rr | 10.10.20.11 / .12 / .13¹ | Ceph/Storage |
+| Interface | Typ | Bond-Modus | IP (pve1 / pve2 / pve3) | Subnetz | Funktion |
+|-----------|-----|-----------|--------------------------|---------|---------|
+| `nic0` → `vmbr0` | Bridge | – | 172.30.7.31 / .32 / .33 | /16 | Web UI, Admin-SSH, Corosync Ring 1 |
+| `ens19` | Dedizierte NIC | – | 10.10.20.11 / .12 / .13 | /24 | Corosync Ring 0 (dediziert) |
+| `bond0` → `vmbr1` | Bond → Bridge | active-backup | – | – | VM-Traffic, VLAN-aware |
+| `bond1` | Bond | balance-rr | 10.20.20.11 / .12 / .13 | /24 | Ceph/Storage (eigenes Subnetz) |
 
-> ¹ In der Teststellung teilt bond1 das 10.10.20.x-Subnetz mit ens19. **Produktiv-Empfehlung:** Ceph-Storage auf eigenem Subnetz (z.B. 10.10.21.x) für saubere Trennung von Corosync-Traffic.
+Drei vollständig getrennte Subnetze für drei unterschiedliche Traffic-Typen – das ist korrekt aufgebaut.
 
-> **Hinweis bond1:** `balance-rr` erhöht den Ceph-Durchsatz (Round-Robin über beide NICs), kann aber bei TCP zu Paketumsortierung führen. Für Produktiv-Umgebungen `802.3ad` (LACP, switch-seitig konfigurieren) oder VIREQ-Standard `active-backup` evaluieren.
+> **Hinweis bond1 `balance-rr`:** Round-Robin über beide NICs erhöht den Ceph-Durchsatz, kann aber bei TCP zu Paketumsortierung führen. Für Produktiv-Umgebungen `802.3ad` (LACP, switch-seitig) oder VIREQ-Standard `active-backup` bevorzugen.
 
 ---
 
 ## IPsets für den 3-Node-Cluster
 
-Aus der NIC-Konfiguration ergeben sich **drei IPsets**:
+Die drei Subnetze ergeben **vier IPsets** – je eines pro Netzwerk plus Admin-Zugriff:
 
-| IPset-Name | Netzwerk | Inhalt | Verwendung |
-|------------|----------|--------|------------|
-| `cluster-mgmt` | 172.30.7.x/16 | Management-IPs (vmbr0) | Web UI, SSH, Corosync Ring 1, Live-Migration |
-| `cluster-storage` | 10.10.20.x/24 | Storage-IPs (ens19 + bond1) | Corosync Ring 0, Ceph-Traffic |
-| `mgmt-hosts` | variabel | Admin-Workstations, Jump-Hosts | SSH, Web UI, VNC/SPICE |
+| IPset-Name | Subnetz | Interface | Verwendung in Firewall-Regeln |
+|------------|---------|-----------|-------------------------------|
+| `cluster-mgmt` | 172.30.7.x/16 | vmbr0 / nic0 | Web UI, Admin-SSH, Corosync Ring 1, Live-Migration |
+| `corosync-ring0` | 10.10.20.x/24 | ens19 | Corosync Ring 0 (nur Port 5405 UDP) |
+| `ceph-net` | 10.20.20.x/24 | bond1 | Ceph Monitor, OSD, MDS, MGR |
+| `mgmt-hosts` | variabel | – | Admin-Workstations, Jump-Hosts |
 
-> **Warum zwei Cluster-IPsets?** Corosync nutzt zwei getrennte Ringe auf verschiedenen Subnetzen. Die Firewall muss beide Quell-IP-Bereiche für Corosync-Traffic zulassen, sonst bricht Ring 1 oder Ring 0 ab.
+> **Warum kein gemeinsames `cluster-nodes`-IPset?** Corosync Ring 0 (ens19, 10.10.20.x) und Ceph-Storage (bond1, 10.20.20.x) sind auf vollständig verschiedenen Subnetzen. Würde man sie zusammenfassen, müsste man Ceph-Ports (6800–7300) für das Corosync-Subnetz öffnen und umgekehrt – unnötige Angriffsfläche.
 
 ---
 
@@ -124,15 +125,20 @@ log_ratelimit: enable=1,burst=10,rate=5/second
 # IPsets – Vor Aktivierung anpassen!
 ########################################
 
-[IPSET cluster-mgmt] # Management-Netzwerk / Corosync Ring 1 (vmbr0 via nic0)
+[IPSET cluster-mgmt] # Management-Netzwerk + Corosync Ring 1 (vmbr0 via nic0)
 172.30.7.31 # pve1
 172.30.7.32 # pve2
 172.30.7.33 # pve3
 
-[IPSET cluster-storage] # Corosync Ring 0 (ens19) + Ceph-Netz (bond1)
+[IPSET corosync-ring0] # Corosync Ring 0 – dedizierte NIC (ens19)
 10.10.20.11 # pve1
 10.10.20.12 # pve2
 10.10.20.13 # pve3
+
+[IPSET ceph-net] # Ceph/Storage-Netzwerk (bond1, eigenes Subnetz)
+10.20.20.11 # pve1
+10.20.20.12 # pve2
+10.20.20.13 # pve3
 
 [IPSET mgmt-hosts] # Admin-Workstations / Jump-Hosts
 # 10.0.1.50   # Admin-PC (vor Aktivierung ersetzen!)
@@ -145,38 +151,39 @@ log_ratelimit: enable=1,burst=10,rate=5/second
 [RULES]
 
 # ── SSH ──────────────────────────────────────────────────────────────────
-IN ACCEPT -source +mgmt-hosts       -dport 22 -proto tcp -log nolog -comment "SSH: Admin-Zugriff"
-IN ACCEPT -source +cluster-mgmt     -dport 22 -proto tcp -log nolog -comment "SSH: Inter-Node (Management-Netz)"
+IN ACCEPT -source +mgmt-hosts      -dport 22 -proto tcp -log nolog -comment "SSH: Admin-Zugriff"
+IN ACCEPT -source +cluster-mgmt    -dport 22 -proto tcp -log nolog -comment "SSH: Inter-Node (Management-Netz)"
 
 # ── Proxmox Web UI ───────────────────────────────────────────────────────
-IN ACCEPT -source +mgmt-hosts       -dport 8006 -proto tcp -log nolog -comment "PVE Web UI (HTTPS)"
+IN ACCEPT -source +mgmt-hosts      -dport 8006 -proto tcp -log nolog -comment "PVE Web UI (HTTPS)"
 
 # ── Corosync Ring 0 (10.10.20.x / ens19) ────────────────────────────────
-IN ACCEPT -source +cluster-storage  -dport 5405 -proto udp -log nolog -comment "Corosync Ring 0 (ens19)"
+IN ACCEPT -source +corosync-ring0  -dport 5405 -proto udp -log nolog -comment "Corosync Ring 0 (ens19)"
 
 # ── Corosync Ring 1 (172.30.7.x / vmbr0) ────────────────────────────────
-IN ACCEPT -source +cluster-mgmt     -dport 5406 -proto udp -log nolog -comment "Corosync Ring 1 (vmbr0)"
+IN ACCEPT -source +cluster-mgmt    -dport 5406 -proto udp -log nolog -comment "Corosync Ring 1 (vmbr0)"
 
 # ── Live-Migration (VM/CT) ───────────────────────────────────────────────
-IN ACCEPT -source +cluster-mgmt     -dport 60000:60050 -proto tcp -log nolog -comment "VM/CT Live-Migration"
+IN ACCEPT -source +cluster-mgmt    -dport 60000:60050 -proto tcp -log nolog -comment "VM/CT Live-Migration"
 
 # ── VNC / noVNC-Konsole ──────────────────────────────────────────────────
-IN ACCEPT -source +mgmt-hosts       -dport 5900:5999 -proto tcp -log nolog -comment "VNC/noVNC-Konsole"
+IN ACCEPT -source +mgmt-hosts      -dport 5900:5999 -proto tcp -log nolog -comment "VNC/noVNC-Konsole"
 
 # ── SPICE-Proxy ──────────────────────────────────────────────────────────
-IN ACCEPT -source +mgmt-hosts       -dport 3128 -proto tcp -log nolog -comment "SPICE-Proxy"
+IN ACCEPT -source +mgmt-hosts      -dport 3128 -proto tcp -log nolog -comment "SPICE-Proxy"
 
-# ── Ceph Monitor (via bond1 / 10.10.20.x) ───────────────────────────────
-IN ACCEPT -source +cluster-storage  -dport 3300 -proto tcp -log nolog -comment "Ceph Monitor v2 (msgr2)"
-IN ACCEPT -source +cluster-storage  -dport 6789 -proto tcp -log nolog -comment "Ceph Monitor v1 (Legacy)"
+# ── Ceph Monitor (10.20.20.x / bond1) ───────────────────────────────────
+IN ACCEPT -source +ceph-net        -dport 3300 -proto tcp -log nolog -comment "Ceph Monitor v2 (msgr2)"
+IN ACCEPT -source +ceph-net        -dport 6789 -proto tcp -log nolog -comment "Ceph Monitor v1 (Legacy)"
 
-# ── Ceph OSD / MDS / MGR (via bond1 / 10.10.20.x) ──────────────────────
-IN ACCEPT -source +cluster-storage  -dport 6800:7300 -proto tcp -log nolog -comment "Ceph OSD/MDS/MGR"
+# ── Ceph OSD / MDS / MGR (10.20.20.x / bond1) ──────────────────────────
+IN ACCEPT -source +ceph-net        -dport 6800:7300 -proto tcp -log nolog -comment "Ceph OSD/MDS/MGR"
 
 # ── ICMP – Monitoring & Diagnose ─────────────────────────────────────────
-IN ACCEPT -source +cluster-mgmt     -proto icmp -log nolog -comment "ICMP: Management-Netz"
-IN ACCEPT -source +cluster-storage  -proto icmp -log nolog -comment "ICMP: Storage-Netz"
-IN ACCEPT -source +mgmt-hosts       -proto icmp -log nolog -comment "ICMP: Admin"
+IN ACCEPT -source +cluster-mgmt    -proto icmp -log nolog -comment "ICMP: Management-Netz"
+IN ACCEPT -source +corosync-ring0  -proto icmp -log nolog -comment "ICMP: Corosync Ring 0"
+IN ACCEPT -source +ceph-net        -proto icmp -log nolog -comment "ICMP: Ceph-Netz"
+IN ACCEPT -source +mgmt-hosts      -proto icmp -log nolog -comment "ICMP: Admin"
 ```
 
 ### Konfiguration einspielen
@@ -267,7 +274,7 @@ nano /etc/pve/nodes/pve3/host.fw
 ### Schritt 1: Admin-IP eintragen
 
 ```bash
-# Eigene IP ermitteln
+# Eigene IP ermitteln (Zugriff erfolgt über Management-Netz 172.30.7.x)
 ip route get 172.30.7.31 | awk '{print $7; exit}'
 
 # cluster.fw bearbeiten – eigene IP in [IPSET mgmt-hosts] eintragen
@@ -301,7 +308,8 @@ iptables -L INPUT -n -v --line-numbers
 
 # IPsets prüfen
 ipset list cluster-mgmt
-ipset list cluster-storage
+ipset list corosync-ring0
+ipset list ceph-net
 ipset list mgmt-hosts
 
 # Corosync – beide Ringe müssen "connected" sein
@@ -325,22 +333,22 @@ done
 
 ## Port-Referenz
 
-| Port(s) | Protokoll | Dienst | Quelle (IPset) | Netzwerk | Pflicht |
-|---------|-----------|--------|---------------|----------|:-------:|
-| 22 | TCP | SSH | `mgmt-hosts`, `cluster-mgmt` | 172.30.7.x | ✅ |
-| 8006 | TCP | Proxmox Web UI | `mgmt-hosts` | 172.30.7.x | ✅ |
-| 5405 | UDP | Corosync Ring 0 | `cluster-storage` | 10.10.20.x | ✅ |
-| 5406 | UDP | Corosync Ring 1 | `cluster-mgmt` | 172.30.7.x | ✅ |
-| 60000–60050 | TCP | VM/CT Live-Migration | `cluster-mgmt` | 172.30.7.x | ✅ |
-| 5900–5999 | TCP | VNC / noVNC-Konsole | `mgmt-hosts` | 172.30.7.x | ✅ |
-| 3128 | TCP | SPICE-Proxy | `mgmt-hosts` | 172.30.7.x | ✅ |
-| 3300 | TCP | Ceph Monitor v2 (msgr2) | `cluster-storage` | 10.10.20.x | ✅ (Ceph) |
-| 6789 | TCP | Ceph Monitor v1 | `cluster-storage` | 10.10.20.x | ✅ (Ceph) |
-| 6800–7300 | TCP | Ceph OSD / MDS / MGR | `cluster-storage` | 10.10.20.x | ✅ (Ceph) |
-| — | ICMP | Ping / Monitoring | alle IPsets | beide | ✅ |
-| 9100 | TCP | Prometheus Node Exporter | `mgmt-hosts` | 172.30.7.x | Optional |
-| 8443 | TCP | Ceph Dashboard (direkt) | `mgmt-hosts` | 172.30.7.x | Optional |
-| 4789 | UDP | VXLAN (SDN) | `cluster-mgmt` | 172.30.7.x | Optional |
+| Port(s) | Protokoll | Dienst | Quelle (IPset) | Interface | Pflicht |
+|---------|-----------|--------|---------------|-----------|:-------:|
+| 22 | TCP | SSH | `mgmt-hosts`, `cluster-mgmt` | vmbr0 | ✅ |
+| 8006 | TCP | Proxmox Web UI | `mgmt-hosts` | vmbr0 | ✅ |
+| 5405 | UDP | Corosync Ring 0 | `corosync-ring0` | ens19 | ✅ |
+| 5406 | UDP | Corosync Ring 1 | `cluster-mgmt` | vmbr0 | ✅ |
+| 60000–60050 | TCP | VM/CT Live-Migration | `cluster-mgmt` | vmbr0 | ✅ |
+| 5900–5999 | TCP | VNC / noVNC-Konsole | `mgmt-hosts` | vmbr0 | ✅ |
+| 3128 | TCP | SPICE-Proxy | `mgmt-hosts` | vmbr0 | ✅ |
+| 3300 | TCP | Ceph Monitor v2 (msgr2) | `ceph-net` | bond1 | ✅ (Ceph) |
+| 6789 | TCP | Ceph Monitor v1 | `ceph-net` | bond1 | ✅ (Ceph) |
+| 6800–7300 | TCP | Ceph OSD / MDS / MGR | `ceph-net` | bond1 | ✅ (Ceph) |
+| — | ICMP | Ping / Monitoring | alle IPsets | alle | ✅ |
+| 9100 | TCP | Prometheus Node Exporter | `mgmt-hosts` | vmbr0 | Optional |
+| 8443 | TCP | Ceph Dashboard (direkt) | `mgmt-hosts` | vmbr0 | Optional |
+| 4789 | UDP | VXLAN (SDN) | `cluster-mgmt` | vmbr0 | Optional |
 
 ---
 
@@ -377,8 +385,8 @@ ceph mgr stat
 
 ✅ **Empfohlen:**
 - `policy_in: DROP` als Datacenter-Standard – Whitelist-Ansatz
-- Zwei getrennte Cluster-IPsets (`cluster-mgmt` und `cluster-storage`) für korrekte Corosync-Ring-Filterung
-- IPsets für alle Netzwerkgruppen – niemals IPs direkt in Regeln hardcoden
+- Drei getrennte Cluster-IPsets (`cluster-mgmt`, `corosync-ring0`, `ceph-net`) – je ein IPset pro Subnetz
+- Ceph-Ports (6800–7300) ausschließlich für `ceph-net` öffnen, nicht für Corosync-IPs
 - `log_ratelimit` aktivieren – verhindert Log-Flooding bei Port-Scans
 - Nach Cluster-Erweiterung alle IPsets sofort aktualisieren
 - Physische Konsole (IPMI/iDRAC) als Fallback vor Aktivierung prüfen
@@ -387,13 +395,12 @@ ceph mgr stat
 - `policy_out: DROP` **nicht** ohne explizite Ausgehend-Regeln – sperrt NTP, DNS, apt-Updates
 - Nach Aktivierung immer Corosync-Status prüfen: `corosync-cfgtool -s` (beide Ringe connected?)
 - `mgmt-hosts` bei Änderung der Admin-IP sofort aktualisieren
-- bond1 `balance-rr` für Ceph-Storage: in Produktiv-Umgebung auf `802.3ad` (LACP) oder `active-backup` wechseln
+- bond1 `balance-rr`: in Produktiv-Umgebung auf `802.3ad` (LACP) oder VIREQ-Standard `active-backup` wechseln
 
 ❌ **Vermeiden:**
 - `policy_in: ACCEPT` im Produktivbetrieb
-- Corosync-Ring-Regeln mit falschem IPset (Ring 0 ≠ Ring 1 Quell-IP)
+- Corosync Ring 0 und Ceph in einem gemeinsamen IPset zusammenfassen (unterschiedliche Subnetze, unterschiedliche erlaubte Ports)
 - VNC-Ports (5900–5999) ohne Quell-IP-Einschränkung öffnen
-- Ceph- und Management-Netz auf gleichem Subnetz (Produktiv-Deployments)
 
 ---
 
@@ -402,13 +409,12 @@ ceph mgr stat
 | Problem | Mögliche Ursache | Lösung |
 |---------|-----------------|--------|
 | Web UI nicht erreichbar | Eigene IP fehlt in `mgmt-hosts` | Physische Konsole → IP eintragen → `pve-firewall reload` |
-| Corosync Ring 0 unterbrochen | Port 5405 UDP von `cluster-storage` blockiert | Regel für `cluster-storage` → Port 5405 prüfen |
-| Corosync Ring 1 unterbrochen | Port 5406 UDP von `cluster-mgmt` blockiert | Regel für `cluster-mgmt` → Port 5406 prüfen |
-| Live-Migration schlägt fehl | Port 60000–60050 nicht freigegeben | `cluster-mgmt` → 60000:60050 prüfen; auf Ziel-Node `iptables -L -n` |
-| Ceph OSD fällt auf `down` | Ceph-Ports blockiert | `cluster-storage` → 3300/6789/6800:7300 prüfen |
+| Corosync Ring 0 unterbrochen | Port 5405 UDP von `corosync-ring0` blockiert | IPset `corosync-ring0` und Regel prüfen |
+| Corosync Ring 1 unterbrochen | Port 5406 UDP von `cluster-mgmt` blockiert | IPset `cluster-mgmt` und Regel prüfen |
+| Live-Migration schlägt fehl | Port 60000–60050 nicht freigegeben | `cluster-mgmt` → 60000:60050; auf Ziel-Node `iptables -L -n` |
+| Ceph OSD fällt auf `down` | Ceph-Ports blockiert | `ceph-net` → 3300/6789/6800:7300 prüfen |
 | `pve-firewall compile` schlägt fehl | Syntaxfehler | Fehlermeldung auswerten – häufig: `-comment` ohne Anführungszeichen |
 | SSH nach Aktivierung gesperrt | Eigene IP nicht in `mgmt-hosts` | IPMI/iDRAC nutzen → IP nachtragen |
-| Falsches IPset für Corosync | Ring 0 / Ring 1 verwechselt | Ring 0 (ens19) = `cluster-storage` (10.10.20.x); Ring 1 (vmbr0) = `cluster-mgmt` (172.30.7.x) |
 
 ### Debugging-Befehle
 
@@ -419,15 +425,19 @@ journalctl -u pve-firewall --since "10 minutes ago" | tail -50
 # iptables – INPUT-Chain
 iptables -L INPUT -n -v --line-numbers
 
-# IPsets prüfen
+# Alle IPsets prüfen
 ipset list cluster-mgmt
-ipset list cluster-storage
+ipset list corosync-ring0
+ipset list ceph-net
 
-# Corosync-Ring-Test (von pve1 auf pve2/pve3)
-# Ring 0 (10.10.20.x):
+# Corosync Ring 0 (ens19 / 10.10.20.x) testen
 nc -vzu 10.10.20.12 5405 && echo "Ring 0: OK" || echo "Ring 0: BLOCKED"
-# Ring 1 (172.30.7.x):
+
+# Corosync Ring 1 (vmbr0 / 172.30.7.x) testen
 nc -vzu 172.30.7.32 5406 && echo "Ring 1: OK" || echo "Ring 1: BLOCKED"
+
+# Ceph-Erreichbarkeit auf Storage-Netz testen
+nc -vz 10.20.20.12 3300 && echo "Ceph MON: OK" || echo "Ceph MON: BLOCKED"
 
 # Ceph-Status nach Firewall-Änderungen
 ceph status
