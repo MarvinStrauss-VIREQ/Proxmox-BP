@@ -77,7 +77,7 @@ pve1
 │
 ├── ens22 (enp6s22)  ┐
 │                    └──→  bond1 (balance-rr)  ──→  10.20.20.11/24
-└── ens23 (enp6s23)  ┘       └─ Ceph/Storage-Netz (eigenes Subnetz)
+└── ens23 (enp6s23)  ┘       └─ Ceph/Storage-Netz (eigenes Subnetz, kein Gateway)
 ```
 
 ### Netzwerk-Übersicht pro Node
@@ -87,7 +87,7 @@ pve1
 | `nic0` → `vmbr0` | Bridge | – | 172.30.7.31 / .32 / .33 | /16 | Web UI, Admin-SSH, Corosync Ring 1 |
 | `ens19` | Dedizierte NIC | – | 10.10.20.11 / .12 / .13 | /24 | Corosync Ring 0 (dediziert) |
 | `bond0` → `vmbr1` | Bond → Bridge | active-backup | – | – | VM-Traffic, VLAN-aware |
-| `bond1` | Bond | balance-rr | 10.20.20.11 / .12 / .13 | /24 | Ceph/Storage (eigenes Subnetz) |
+| `bond1` | Bond | balance-rr | 10.20.20.11 / .12 / .13 | /24 | Ceph/Storage (eigenes Subnetz, kein Gateway) |
 
 Drei vollständig getrennte Subnetze für drei unterschiedliche Traffic-Typen – das ist korrekt aufgebaut.
 
@@ -97,16 +97,22 @@ Drei vollständig getrennte Subnetze für drei unterschiedliche Traffic-Typen �
 
 ## IPsets für den 3-Node-Cluster
 
-Die drei Subnetze ergeben **vier IPsets** – je eines pro Netzwerk plus Admin-Zugriff:
+Die drei Subnetze ergeben **vier IPsets**. Entscheidend ist dabei das Eintragsformat – je nach Netz entweder Einzeladressen oder ein ganzes Subnetz:
 
-| IPset-Name | Subnetz | Interface | Verwendung in Firewall-Regeln |
-|------------|---------|-----------|-------------------------------|
-| `cluster-mgmt` | 172.30.7.x/16 | vmbr0 / nic0 | Web UI, Admin-SSH, Corosync Ring 1, Live-Migration |
-| `corosync-ring0` | 10.10.20.x/24 | ens19 | Corosync Ring 0 (nur Port 5405 UDP) |
-| `ceph-net` | 10.20.20.x/24 | bond1 | Ceph Monitor, OSD, MDS, MGR |
-| `mgmt-hosts` | variabel | – | Admin-Workstations, Jump-Hosts |
+| IPset-Name | Eintragsformat | Interface | Verwendung |
+|------------|---------------|-----------|------------|
+| `cluster-mgmt` | Einzeladressen (172.30.7.31–33) | vmbr0 / nic0 | Web UI, Admin-SSH, Corosync Ring 1, Live-Migration |
+| `corosync-ring0` | Einzeladressen (10.10.20.11–13) | ens19 | Corosync Ring 0 (nur Port 5405 UDP) |
+| `ceph-net` | Subnetz `10.20.20.0/24` | bond1 | Ceph Monitor, OSD, MDS, MGR |
+| `mgmt-hosts` | Admin-IPs (variabel) | – | Admin-Workstations, Jump-Hosts |
 
-> **Warum kein gemeinsames `cluster-nodes`-IPset?** Corosync Ring 0 (ens19, 10.10.20.x) und Ceph-Storage (bond1, 10.20.20.x) sind auf vollständig verschiedenen Subnetzen. Würde man sie zusammenfassen, müsste man Ceph-Ports (6800–7300) für das Corosync-Subnetz öffnen und umgekehrt – unnötige Angriffsfläche.
+**Einzeladressen vs. Subnetz – wann was:**
+
+`cluster-mgmt` und `corosync-ring0` verwenden Einzeladressen. Diese Netze haben ein Gateway und sind potenziell von anderen Segmenten erreichbar – enger Scope ist hier die richtige Wahl.
+
+`ceph-net` verwendet das gesamte `/24`-Subnetz (`10.20.20.0/24`), weil bond1 physisch isoliert ist: kein Gateway, kein Router, keine Verbindung zum restlichen Netz. Ein fremdes Gerät kann dieses Subnetz gar nicht erreichen. Als zusätzlicher Vorteil: Bei Cluster-Erweiterung um einen vierten Node (10.20.20.14) greift das IPset automatisch – keine Anpassung nötig.
+
+> **Warum kein gemeinsames `cluster-nodes`-IPset?** Corosync Ring 0 (10.10.20.x) und Ceph (10.20.20.x) sind auf vollständig verschiedenen Subnetzen. Würde man sie zusammenfassen, müsste man Ceph-Ports (6800–7300) für das Corosync-Subnetz öffnen und umgekehrt – unnötige Angriffsfläche.
 
 ---
 
@@ -135,10 +141,8 @@ log_ratelimit: enable=1,burst=10,rate=5/second
 10.10.20.12 # pve2
 10.10.20.13 # pve3
 
-[IPSET ceph-net] # Ceph/Storage-Netzwerk (bond1, eigenes Subnetz)
-10.20.20.11 # pve1
-10.20.20.12 # pve2
-10.20.20.13 # pve3
+[IPSET ceph-net] # bond1 – Ceph Storage-Netz, physisch isoliert (kein Gateway)
+10.20.20.0/24   # Gesamtes Ceph-Subnetz – deckt Cluster-Erweiterungen automatisch ab
 
 [IPSET mgmt-hosts] # Admin-Workstations / Jump-Hosts
 # 10.0.1.50   # Admin-PC (vor Aktivierung ersetzen!)
@@ -172,11 +176,11 @@ IN ACCEPT -source +mgmt-hosts      -dport 5900:5999 -proto tcp -log nolog -comme
 # ── SPICE-Proxy ──────────────────────────────────────────────────────────
 IN ACCEPT -source +mgmt-hosts      -dport 3128 -proto tcp -log nolog -comment "SPICE-Proxy"
 
-# ── Ceph Monitor (10.20.20.x / bond1) ───────────────────────────────────
+# ── Ceph Monitor (10.20.20.0/24 / bond1) ────────────────────────────────
 IN ACCEPT -source +ceph-net        -dport 3300 -proto tcp -log nolog -comment "Ceph Monitor v2 (msgr2)"
 IN ACCEPT -source +ceph-net        -dport 6789 -proto tcp -log nolog -comment "Ceph Monitor v1 (Legacy)"
 
-# ── Ceph OSD / MDS / MGR (10.20.20.x / bond1) ──────────────────────────
+# ── Ceph OSD / MDS / MGR (10.20.20.0/24 / bond1) ───────────────────────
 IN ACCEPT -source +ceph-net        -dport 6800:7300 -proto tcp -log nolog -comment "Ceph OSD/MDS/MGR"
 
 # ── ICMP – Monitoring & Diagnose ─────────────────────────────────────────
@@ -309,7 +313,7 @@ iptables -L INPUT -n -v --line-numbers
 # IPsets prüfen
 ipset list cluster-mgmt
 ipset list corosync-ring0
-ipset list ceph-net
+ipset list ceph-net      # Sollte 10.20.20.0/24 als Netz-Eintrag zeigen
 ipset list mgmt-hosts
 
 # Corosync – beide Ringe müssen "connected" sein
@@ -386,9 +390,10 @@ ceph mgr stat
 ✅ **Empfohlen:**
 - `policy_in: DROP` als Datacenter-Standard – Whitelist-Ansatz
 - Drei getrennte Cluster-IPsets (`cluster-mgmt`, `corosync-ring0`, `ceph-net`) – je ein IPset pro Subnetz
+- `ceph-net` als `/24`-Subnetz eintragen wenn bond1 physisch isoliert ist (kein Gateway) – einfacher bei Cluster-Erweiterung
+- `cluster-mgmt` und `corosync-ring0` als Einzeladressen – engerer Scope für Netze mit Gateway
 - Ceph-Ports (6800–7300) ausschließlich für `ceph-net` öffnen, nicht für Corosync-IPs
 - `log_ratelimit` aktivieren – verhindert Log-Flooding bei Port-Scans
-- Nach Cluster-Erweiterung alle IPsets sofort aktualisieren
 - Physische Konsole (IPMI/iDRAC) als Fallback vor Aktivierung prüfen
 
 ⚠️ **Achtung:**
@@ -398,8 +403,8 @@ ceph mgr stat
 - bond1 `balance-rr`: in Produktiv-Umgebung auf `802.3ad` (LACP) oder VIREQ-Standard `active-backup` wechseln
 
 ❌ **Vermeiden:**
-- `policy_in: ACCEPT` im Produktivbetrieb
-- Corosync Ring 0 und Ceph in einem gemeinsamen IPset zusammenfassen (unterschiedliche Subnetze, unterschiedliche erlaubte Ports)
+- `ceph-net` als `/24` eintragen wenn das Subnetz ein Gateway hat und von außen erreichbar ist – dann Einzeladressen verwenden
+- Corosync Ring 0 und Ceph in einem gemeinsamen IPset zusammenfassen (unterschiedliche Subnetze, unterschiedliche Ports)
 - VNC-Ports (5900–5999) ohne Quell-IP-Einschränkung öffnen
 
 ---
@@ -425,7 +430,7 @@ journalctl -u pve-firewall --since "10 minutes ago" | tail -50
 # iptables – INPUT-Chain
 iptables -L INPUT -n -v --line-numbers
 
-# Alle IPsets prüfen
+# IPsets prüfen – ceph-net zeigt Subnetz-Eintrag, andere Einzeladressen
 ipset list cluster-mgmt
 ipset list corosync-ring0
 ipset list ceph-net
