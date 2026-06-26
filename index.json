@@ -49,14 +49,28 @@
       "title": "Firewall & IPsets",
       "path": "kapitel/07-firewall-ipsets.md",
       "tags": ["firewall", "ipset", "sicherheit", "pve-firewall", "cluster-fw", "host-fw", "corosync", "ceph", "ports", "whitelist", "policy", "drop", "3-node", "live-migration", "vnc", "spice"],
-      "summary": "Proxmox-native Firewall auf drei Ebenen (Datacenter/Host/VM), drei IPsets für Management/Corosync Ring 0/Ceph, vollständige cluster.fw für 3-Node-Ceph-Cluster und 2-Node-Cluster, Aktivierung und Troubleshooting."
+      "summary": "Proxmox-native Firewall auf drei Ebenen, drei IPsets (cluster-mgmt/corosync-ring0/ceph-net), vollständige cluster.fw für 3-Node-Ceph-Cluster und 2-Node-Cluster."
     },
     {
       "id": "08",
       "title": "Software Defined Networking (SDN)",
       "path": "kapitel/08-sdn.md",
       "tags": ["sdn", "vnet", "vlan", "vxlan", "evpn", "zone", "subnet", "dhcp", "dnsmasq", "netzwerk", "vm-netzwerk", "multi-tenant", "libpve-network-perl", "vmbr", "trunk"],
-      "summary": "SDN VLAN Zone als Best-Practice für VM-Netzwerke im Cluster: automatische VNet-Propagierung auf alle Nodes, Subnets, optionaler DHCP via dnsmasq, Ablösung manueller VLAN-Bridge-Konfiguration, Hyper-V-Vergleich."
+      "summary": "SDN VLAN Zone als Best-Practice für VM-Netzwerke: automatische VNet-Propagierung auf alle Nodes, Subnets, optionaler DHCP, Ablösung manueller VLAN-Bridge-Konfiguration."
+    },
+    {
+      "id": "09",
+      "title": "Ceph Storage",
+      "path": "kapitel/09-ceph-storage.md",
+      "tags": ["ceph", "osd", "mon", "mgr", "mds", "rbd", "pool", "crush", "cephfs", "storage", "shared-storage", "size", "min_size", "pg", "bluestore", "squid"],
+      "summary": "Ceph 19.x Setup für 3-Node-Cluster: Monitor/OSD/MGR-Einrichtung, Pool-Konfiguration (size=3/min_size=2), CRUSH-Regeln, RBD-Storage in Proxmox, Grundlage für HA."
+    },
+    {
+      "id": "10",
+      "title": "High Availability (HA)",
+      "path": "kapitel/10-high-availability.md",
+      "tags": ["ha", "high-availability", "fencing", "watchdog", "ipmi", "stonith", "ha-manager", "crm", "lrm", "ha-gruppe", "ha-ressource", "failover", "live-migration", "qemu-agent", "cpu-typ"],
+      "summary": "Proxmox HA Manager: Watchdog-Fencing, IPMI-Fence-Device, HA-Gruppen, HA-Ressourcen, VM-Voraussetzungen (QEMU-Agent, CPU-Typ, Shared Storage), Failover-Tests und vollständige Gesamtarchitektur."
     }
   ]
 }
