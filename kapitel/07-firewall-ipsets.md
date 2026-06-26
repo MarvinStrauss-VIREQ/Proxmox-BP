@@ -284,14 +284,6 @@ GROUP sg-base      # SSH + ICMP von Admin
 GROUP sg-db-mssql  # MSSQL nur von Admin
 ```
 
-```bash
-# VM-Firewall aktivieren
-nano /etc/pve/firewall/100.fw
-
-# Oder Web UI: VM → Firewall → Options → Firewall: Yes
-#             VM → Firewall → Add → Security Group auswählen
-```
-
 ### VIREQ Standard Security Groups
 
 | Security Group | Regeln | Typische VMs |
@@ -346,7 +338,7 @@ enable: 1
 # Prometheus Node Exporter (optional)
 # IN ACCEPT -source +dc/mgmt-hosts -p tcp -dport 9100 -log nolog # Prometheus
 
-# Ceph Dashboard (direkt, optional – normalerweise über PVE Web UI ausreichend)
+# Ceph Dashboard (direkt, optional)
 # IN ACCEPT -source +dc/mgmt-hosts -p tcp -dport 8443 -log nolog # Ceph Dashboard
 
 # NinjaOne Agent: keine eingehenden Ports
@@ -450,7 +442,56 @@ done
 | Security Group greift nicht | `pve-firewall reload` fehlt | `pve-firewall compile && pve-firewall reload` |
 | SSH nach Aktivierung gesperrt | Eigene IP nicht in `mgmt-hosts` | IPMI/iDRAC nutzen → IP nachtragen |
 
-### Debugging-Befehle
+### pve-firewall CLI Referenz
+
+| Befehl | Funktion |
+|--------|---------|
+| `pve-firewall compile` | Regeln kompilieren + Syntaxprüfung (kein Output = OK) |
+| `pve-firewall status` | Firewall-Status anzeigen |
+| `pve-firewall restart` | Service neu starten |
+| `pve-firewall localnet` | Lokale Netzwerk-Info anzeigen |
+| `pve-firewall simulate` | Regel simulieren **ohne** Aktivierung |
+| `pve-firewall stop` | ⚠️ Entfernt **alle** Regeln — Node ungeschützt! |
+
+### simulate – Regeln testen ohne Aktivierung
+
+`pve-firewall simulate` ist das wichtigste Debugging-Tool: Es simuliert ob eine bestimmte Verbindung erlaubt oder geblockt wird — ohne die Firewall zu verändern. Ausgabe `ACCEPT` oder `DROP`.
+
+```bash
+# Grundsyntax
+pve-firewall simulate \
+  --from outside \        # Quell-Zone (outside = außerhalb des Clusters)
+  --to host \             # Ziel-Zone (host = dieser Node)
+  --source <quell-ip> \   # Quell-IP-Adresse
+  --dport <port> \        # Zielport
+  --protocol tcp|udp      # Protokoll (kein icmp-Support im simulate-Befehl)
+
+# SSH von Admin erlaubt?
+pve-firewall simulate --from outside --to host \
+  --source 172.30.7.50 --dport 22 --protocol tcp
+
+# Web UI von Admin erlaubt?
+pve-firewall simulate --from outside --to host \
+  --source 172.30.7.50 --dport 8006 --protocol tcp
+
+# Corosync Ring 0 von pve2 erlaubt?
+pve-firewall simulate --from outside --to host \
+  --source 10.10.20.12 --dport 5405 --protocol udp
+
+# Ceph Monitor von Storage-Netz erlaubt?
+pve-firewall simulate --from outside --to host \
+  --source 10.20.20.12 --dport 3300 --protocol tcp
+
+# Live-Migration von pve2 erlaubt?
+pve-firewall simulate --from outside --to host \
+  --source 172.30.7.32 --dport 60000 --protocol tcp
+
+# Verbose-Ausgabe (zeigt welche Regel greift)
+pve-firewall simulate --from outside --to host \
+  --source 172.30.7.50 --dport 22 --protocol tcp --verbose 1
+```
+
+### Weitere Debugging-Befehle
 
 ```bash
 # Compile-Fehler anzeigen
