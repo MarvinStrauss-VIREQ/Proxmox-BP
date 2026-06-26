@@ -49,7 +49,14 @@
       "title": "Firewall & IPsets",
       "path": "kapitel/07-firewall-ipsets.md",
       "tags": ["firewall", "ipset", "sicherheit", "pve-firewall", "cluster-fw", "host-fw", "corosync", "ceph", "ports", "whitelist", "policy", "drop", "3-node", "live-migration", "vnc", "spice"],
-      "summary": "Proxmox-native Firewall auf drei Ebenen (Datacenter/Host/VM), IPsets für Cluster-Nodes und Ceph-Netz, vollständige cluster.fw für 3-Node-Ceph-Cluster und 2-Node-Cluster, Aktivierung und Troubleshooting."
+      "summary": "Proxmox-native Firewall auf drei Ebenen (Datacenter/Host/VM), drei IPsets für Management/Corosync Ring 0/Ceph, vollständige cluster.fw für 3-Node-Ceph-Cluster und 2-Node-Cluster, Aktivierung und Troubleshooting."
+    },
+    {
+      "id": "08",
+      "title": "Software Defined Networking (SDN)",
+      "path": "kapitel/08-sdn.md",
+      "tags": ["sdn", "vnet", "vlan", "vxlan", "evpn", "zone", "subnet", "dhcp", "dnsmasq", "netzwerk", "vm-netzwerk", "multi-tenant", "libpve-network-perl", "vmbr", "trunk"],
+      "summary": "SDN VLAN Zone als Best-Practice für VM-Netzwerke im Cluster: automatische VNet-Propagierung auf alle Nodes, Subnets, optionaler DHCP via dnsmasq, Ablösung manueller VLAN-Bridge-Konfiguration, Hyper-V-Vergleich."
     }
   ]
 }
