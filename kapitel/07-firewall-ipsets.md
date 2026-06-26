@@ -32,7 +32,7 @@ Die `pve-firewall` ist Proxmox-nativ und operiert auf **drei unabhängigen Ebene
 | **Host** | `/etc/pve/nodes/<node>/host.fw` | Node-spezifische Ergänzungen |
 | **VM/CT** | `/etc/pve/firewall/<vmid>.fw` | Einzelne VMs oder Container |
 
-Die Datacenter-Firewall ist der zentrale Einstiegspunkt: alle IPsets, globale Policies und Standardregeln werden dort definiert und automatisch auf alle Cluster-Nodes synchronisiert.
+Die Datacenter-Firewall ist der zentrale Einstiegspunkt: alle IPsets, Security Groups, globale Policies und Standardregeln werden dort definiert und automatisch auf alle Cluster-Nodes synchronisiert.
 
 ### Hyper-V Vergleich
 
@@ -41,6 +41,7 @@ Die Datacenter-Firewall ist der zentrale Einstiegspunkt: alle IPsets, globale Po
 | Host-Firewall | Windows Firewall (GPO oder lokale Regeln) | `pve-firewall` (clusternativ) |
 | Zentrales Management | GPO / Windows Admin Center | Datacenter-Level (`cluster.fw`) |
 | IP-Gruppen | Adressbereiche im Firewall-Scope | **IPsets** – einmal definiert, cluster-weit per pmxcfs |
+| Regelgruppen für VMs | kein natives Äquivalent | **Security Groups** – benannte Regelsets, in VMs referenzierbar |
 | VM-Firewall | Hyper-V Port-ACLs (vSwitch-Ebene) | VM-Level `.fw`-Dateien unter `/etc/pve/firewall/` |
 | Regelverteilung | Active Directory / GPO-Replikation | pmxcfs – automatisch, ohne AD-Abhängigkeit |
 | Default-Policy | Allow (muss manuell gehärtet werden) | Konfigurierbar – `DROP` ist VIREQ-Standard |
@@ -89,15 +90,24 @@ pve1
 | `bond0` → `vmbr1` | Bond → Bridge | active-backup | – | – | VM-Traffic, VLAN-aware |
 | `bond1` | Bond | balance-rr | 10.20.20.11 / .12 / .13 | /24 | Ceph/Storage (eigenes Subnetz, kein Gateway) |
 
-Drei vollständig getrennte Subnetze für drei unterschiedliche Traffic-Typen – das ist korrekt aufgebaut.
-
 > **Hinweis bond1 `balance-rr`:** Round-Robin über beide NICs erhöht den Ceph-Durchsatz, kann aber bei TCP zu Paketumsortierung führen. Für Produktiv-Umgebungen `802.3ad` (LACP, switch-seitig) oder VIREQ-Standard `active-backup` bevorzugen.
+
+---
+
+## Das Firewall-Toolkit: IPsets + Security Groups
+
+Proxmox trennt sauber zwischen **wer** (IPsets) und **was** (Security Groups). Beide zusammen bilden ein vollständiges, wartbares Regelwerk:
+
+| Baustein | Gruppiert | Syntax in Regeln | Typischer Einsatz |
+|----------|-----------|-----------------|-------------------|
+| **IPset** | IP-Adressen | `-source +cluster-mgmt` | Quell-/Ziel-Filter in Regeln |
+| **Security Group** | Firewall-Regeln | `GROUP sg-web` | Regelvorlagen für VM-Typen |
 
 ---
 
 ## IPsets für den 3-Node-Cluster
 
-Die drei Subnetze ergeben **vier IPsets**. Entscheidend ist dabei das Eintragsformat – je nach Netz entweder Einzeladressen oder ein ganzes Subnetz:
+Die drei Subnetze ergeben **vier IPsets**. Entscheidend ist das Eintragsformat – je nach Netz Einzeladressen oder ein Subnetz:
 
 | IPset-Name | Eintragsformat | Interface | Verwendung |
 |------------|---------------|-----------|------------|
@@ -106,13 +116,9 @@ Die drei Subnetze ergeben **vier IPsets**. Entscheidend ist dabei das Eintragsfo
 | `ceph-net` | Subnetz `10.20.20.0/24` | bond1 | Ceph Monitor, OSD, MDS, MGR |
 | `mgmt-hosts` | Admin-IPs (variabel) | – | Admin-Workstations, Jump-Hosts |
 
-**Einzeladressen vs. Subnetz – wann was:**
+**Einzeladressen vs. Subnetz:** `cluster-mgmt` und `corosync-ring0` verwenden Einzeladressen — diese Netze haben ein Gateway und sind potenziell von anderen Segmenten erreichbar, enger Scope ist richtig. `ceph-net` verwendet `/24`, weil bond1 physisch isoliert ist (kein Gateway, kein Router) — ein fremdes Gerät kann das Subnetz gar nicht erreichen, und bei Cluster-Erweiterung greift das IPset automatisch.
 
-`cluster-mgmt` und `corosync-ring0` verwenden Einzeladressen. Diese Netze haben ein Gateway und sind potenziell von anderen Segmenten erreichbar – enger Scope ist hier die richtige Wahl.
-
-`ceph-net` verwendet das gesamte `/24`-Subnetz (`10.20.20.0/24`), weil bond1 physisch isoliert ist: kein Gateway, kein Router, keine Verbindung zum restlichen Netz. Ein fremdes Gerät kann dieses Subnetz gar nicht erreichen. Als zusätzlicher Vorteil: Bei Cluster-Erweiterung um einen vierten Node (10.20.20.14) greift das IPset automatisch – keine Anpassung nötig.
-
-> **Warum kein gemeinsames `cluster-nodes`-IPset?** Corosync Ring 0 (10.10.20.x) und Ceph (10.20.20.x) sind auf vollständig verschiedenen Subnetzen. Würde man sie zusammenfassen, müsste man Ceph-Ports (6800–7300) für das Corosync-Subnetz öffnen und umgekehrt – unnötige Angriffsfläche.
+> **Warum kein gemeinsames `cluster-nodes`-IPset?** Corosync Ring 0 (10.10.20.x) und Ceph (10.20.20.x) liegen auf verschiedenen Subnetzen. Zusammengefasst müsste man Ceph-Ports für das Corosync-Subnetz öffnen und umgekehrt – unnötige Angriffsfläche.
 
 ---
 
@@ -149,7 +155,34 @@ log_ratelimit: enable=1,burst=10,rate=5/second
 # 10.0.1.0/24 # Admin-Subnetz (optional)
 
 ########################################
-# Firewall-Regeln
+# Security Groups (VM-Firewall-Vorlagen)
+########################################
+
+[group sg-base]
+IN ACCEPT -source +mgmt-hosts -dport 22 -proto tcp -comment "SSH: Admin"
+IN ACCEPT -proto icmp                               -comment "ICMP: Monitoring"
+
+[group sg-windows]
+IN ACCEPT -source +mgmt-hosts -dport 3389 -proto tcp -comment "RDP: Admin"
+IN ACCEPT -source +mgmt-hosts -dport 5985 -proto tcp -comment "WinRM HTTP"
+IN ACCEPT -source +mgmt-hosts -dport 5986 -proto tcp -comment "WinRM HTTPS"
+
+[group sg-web]
+IN ACCEPT -dport 80  -proto tcp -comment "HTTP"
+IN ACCEPT -dport 443 -proto tcp -comment "HTTPS"
+
+[group sg-web-internal]
+IN ACCEPT -source +mgmt-hosts -dport 80  -proto tcp -comment "HTTP intern"
+IN ACCEPT -source +mgmt-hosts -dport 443 -proto tcp -comment "HTTPS intern"
+
+[group sg-db-mssql]
+IN ACCEPT -source +mgmt-hosts -dport 1433 -proto tcp -comment "MSSQL Admin"
+
+[group sg-db-mysql]
+IN ACCEPT -source +mgmt-hosts -dport 3306 -proto tcp -comment "MySQL Admin"
+
+########################################
+# Firewall-Regeln (Host-Ebene)
 ########################################
 
 [RULES]
@@ -193,18 +226,94 @@ IN ACCEPT -source +mgmt-hosts      -proto icmp -log nolog -comment "ICMP: Admin"
 ### Konfiguration einspielen
 
 ```bash
-# Direkt bearbeiten (pmxcfs repliziert automatisch an alle Nodes)
 nano /etc/pve/firewall/cluster.fw
-
-# Syntaxprüfung vor dem Aktivieren (kein Reload, nur Prüfung)
-pve-firewall compile
-
-# Regeln neu laden
+pve-firewall compile   # Dry-run
 pve-firewall reload
-
-# Status anzeigen
 pve-firewall status
 ```
+
+---
+
+## Security Groups – VM-Firewall mit Vorlagen
+
+Security Groups lösen das Problem doppelter Regelsets: Statt in jeder VM-Firewall dieselben Regeln zu wiederholen, werden sie einmal in `cluster.fw` definiert und in VM-Firewalls per `GROUP sg-name` referenziert. Eine Änderung an der Security Group wirkt sofort auf alle VMs die sie verwenden.
+
+> **Plattformvergleich:** Entspricht Azure NSGs oder AWS Security Groups — in Proxmox nativ integriert, kein externer Service nötig. Hyper-V hat kein direktes Äquivalent.
+
+### Security Groups auf VMs anwenden
+
+```bash
+# VM-Firewall-Datei anlegen oder bearbeiten
+nano /etc/pve/firewall/100.fw
+```
+
+**Beispiel: Windows-Webserver (VM 100)**
+
+```ini
+[OPTIONS]
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+GROUP sg-base       # SSH + ICMP von Admin
+GROUP sg-windows    # RDP + WinRM von Admin
+GROUP sg-web        # HTTP/HTTPS öffentlich
+```
+
+**Beispiel: Linux-Webserver (VM 101)**
+
+```ini
+[OPTIONS]
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+GROUP sg-base       # SSH + ICMP von Admin
+GROUP sg-web        # HTTP/HTTPS öffentlich
+```
+
+**Beispiel: Interner Datenbankserver (VM 102)**
+
+```ini
+[OPTIONS]
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+GROUP sg-base       # SSH + ICMP von Admin
+GROUP sg-db-mssql   # MSSQL nur von Admin
+```
+
+**Web UI:** VM → Firewall → Add → Security Group auswählen
+
+### Security Group nachträglich ändern
+
+Soll z.B. Port 8443 für alle Webserver ergänzt werden, reicht eine Änderung in `cluster.fw`:
+
+```bash
+nano /etc/pve/firewall/cluster.fw
+# In [group sg-web] ergänzen:
+# IN ACCEPT -dport 8443 -proto tcp -comment "HTTPS alt"
+
+pve-firewall reload
+# Alle VMs mit GROUP sg-web greifen die Änderung sofort
+```
+
+### VIREQ Standard Security Groups
+
+| Security Group | Regeln | Typische VMs |
+|---------------|--------|-------------|
+| `sg-base` | SSH + ICMP (von `mgmt-hosts`) | Alle VMs — immer erste Gruppe |
+| `sg-windows` | RDP 3389, WinRM 5985/5986 (von `mgmt-hosts`) | Windows Server |
+| `sg-web` | HTTP 80, HTTPS 443 (öffentlich) | Webserver, Reverse Proxy |
+| `sg-web-internal` | HTTP/HTTPS (nur von `mgmt-hosts`) | Interne Webapps |
+| `sg-db-mssql` | MSSQL 1433 (von `mgmt-hosts`) | MSSQL-Datenbankserver |
+| `sg-db-mysql` | MySQL 3306 (von `mgmt-hosts`) | MySQL/MariaDB-Server |
+
+> **Hinweis:** Die `sg-base` Gruppe immer als erste Gruppe einbinden — sie liefert SSH und ICMP als Mindestbasis für alle VMs.
 
 ---
 
@@ -256,14 +365,12 @@ enable: 1
 # IN ACCEPT -source +mgmt-hosts -dport 9100 -proto tcp -log nolog -comment "Prometheus Node Exporter"
 
 # Ceph Dashboard (direkt über Port 8443, optional)
-# Normalerweise via PVE Web UI (Port 8006) ausreichend
 # IN ACCEPT -source +mgmt-hosts -dport 8443 -proto tcp -log nolog -comment "Ceph Dashboard direkt"
 
 # NinjaOne Agent: keine eingehenden Ports – Agent baut ausgehende Verbindung auf
 ```
 
 ```bash
-# host.fw für jeden Node individuell
 nano /etc/pve/nodes/pve1/host.fw
 nano /etc/pve/nodes/pve2/host.fw
 nano /etc/pve/nodes/pve3/host.fw
@@ -278,50 +385,34 @@ nano /etc/pve/nodes/pve3/host.fw
 ### Schritt 1: Admin-IP eintragen
 
 ```bash
-# Eigene IP ermitteln (Zugriff erfolgt über Management-Netz 172.30.7.x)
 ip route get 172.30.7.31 | awk '{print $7; exit}'
-
-# cluster.fw bearbeiten – eigene IP in [IPSET mgmt-hosts] eintragen
-nano /etc/pve/firewall/cluster.fw
+nano /etc/pve/firewall/cluster.fw   # eigene IP in [IPSET mgmt-hosts]
 ```
 
 ### Schritt 2: Syntaxprüfung
 
 ```bash
 pve-firewall compile
-# Keine Fehlermeldung = Syntax korrekt
 ```
 
 ### Schritt 3: Aktivieren
 
 ```bash
-# Per CLI
 pvesh set /cluster/firewall/options --enable 1
-
 # Oder: Web UI → Datacenter → Firewall → Options → Firewall: Yes
 ```
 
 ### Schritt 4: Verifizieren
 
 ```bash
-# Firewall-Status
 pve-firewall status
-
-# iptables – aktive INPUT-Regeln
 iptables -L INPUT -n -v --line-numbers
-
-# IPsets prüfen
 ipset list cluster-mgmt
 ipset list corosync-ring0
-ipset list ceph-net      # Sollte 10.20.20.0/24 als Netz-Eintrag zeigen
+ipset list ceph-net        # Zeigt 10.20.20.0/24 als Netz-Eintrag
 ipset list mgmt-hosts
-
-# Corosync – beide Ringe müssen "connected" sein
-corosync-cfgtool -s
-
-# Ceph-Health nach Aktivierung (kein OSD darf abfallen)
-ceph status
-ceph osd stat
+corosync-cfgtool -s        # Beide Ringe müssen "connected" sein
+ceph status                # Kein OSD darf nach Aktivierung fallen
 ```
 
 ### Schritt 5: Cluster-weite Statusprüfung
@@ -358,8 +449,6 @@ done
 
 ## Ceph-Referenz (Cluster-Status)
 
-Für den Abgleich mit dem Ist-Zustand: typische Ceph-Konfiguration eines 3-Node-Clusters.
-
 | Parameter | Wert (Referenz-Cluster) | Hinweis |
 |-----------|------------------------|---------|
 | Ceph Version | 19.2.3 (Squid) | Aktuell mit PVE 9.x |
@@ -369,42 +458,26 @@ Für den Abgleich mit dem Ist-Zustand: typische Ceph-Konfiguration eines 3-Node-
 | OSD-Port-Range | 6800–7300/TCP | Automatisch zugewiesen |
 | Monitor-Port | 3300/TCP (v2), 6789/TCP (v1) | v2 (msgr2) bevorzugt |
 
-```bash
-# Ceph-Version prüfen
-ceph version
-
-# OSD-Belegung pro Node anzeigen
-ceph osd tree
-
-# Monitor-Status
-ceph mon stat
-
-# Manager-Status
-ceph mgr stat
-```
-
 ---
 
 ## Best Practices
 
 ✅ **Empfohlen:**
 - `policy_in: DROP` als Datacenter-Standard – Whitelist-Ansatz
-- Drei getrennte Cluster-IPsets (`cluster-mgmt`, `corosync-ring0`, `ceph-net`) – je ein IPset pro Subnetz
-- `ceph-net` als `/24`-Subnetz eintragen wenn bond1 physisch isoliert ist (kein Gateway) – einfacher bei Cluster-Erweiterung
+- IPsets und Security Groups konsequent nutzen – keine IPs oder Ports direkt in VM-Firewalls hardcoden
+- `sg-base` immer als erste Security Group in jeder VM-Firewall einbinden
+- `ceph-net` als `/24` wenn das Subnetz physisch isoliert ist (kein Gateway)
 - `cluster-mgmt` und `corosync-ring0` als Einzeladressen – engerer Scope für Netze mit Gateway
-- Ceph-Ports (6800–7300) ausschließlich für `ceph-net` öffnen, nicht für Corosync-IPs
-- `log_ratelimit` aktivieren – verhindert Log-Flooding bei Port-Scans
 - Physische Konsole (IPMI/iDRAC) als Fallback vor Aktivierung prüfen
 
 ⚠️ **Achtung:**
 - `policy_out: DROP` **nicht** ohne explizite Ausgehend-Regeln – sperrt NTP, DNS, apt-Updates
-- Nach Aktivierung immer Corosync-Status prüfen: `corosync-cfgtool -s` (beide Ringe connected?)
-- `mgmt-hosts` bei Änderung der Admin-IP sofort aktualisieren
-- bond1 `balance-rr`: in Produktiv-Umgebung auf `802.3ad` (LACP) oder VIREQ-Standard `active-backup` wechseln
+- Nach Aktivierung immer Corosync-Status prüfen: `corosync-cfgtool -s`
+- Security Groups ändern → `pve-firewall reload` — ohne Reload greifen VMs die Änderung nicht
 
 ❌ **Vermeiden:**
-- `ceph-net` als `/24` eintragen wenn das Subnetz ein Gateway hat und von außen erreichbar ist – dann Einzeladressen verwenden
-- Corosync Ring 0 und Ceph in einem gemeinsamen IPset zusammenfassen (unterschiedliche Subnetze, unterschiedliche Ports)
+- Gleiche Regeln in mehreren VM-Firewalls manuell wiederholen statt Security Groups zu nutzen
+- Corosync Ring 0 und Ceph in einem gemeinsamen IPset zusammenfassen
 - VNC-Ports (5900–5999) ohne Quell-IP-Einschränkung öffnen
 
 ---
@@ -416,35 +489,30 @@ ceph mgr stat
 | Web UI nicht erreichbar | Eigene IP fehlt in `mgmt-hosts` | Physische Konsole → IP eintragen → `pve-firewall reload` |
 | Corosync Ring 0 unterbrochen | Port 5405 UDP von `corosync-ring0` blockiert | IPset `corosync-ring0` und Regel prüfen |
 | Corosync Ring 1 unterbrochen | Port 5406 UDP von `cluster-mgmt` blockiert | IPset `cluster-mgmt` und Regel prüfen |
-| Live-Migration schlägt fehl | Port 60000–60050 nicht freigegeben | `cluster-mgmt` → 60000:60050; auf Ziel-Node `iptables -L -n` |
+| Live-Migration schlägt fehl | Port 60000–60050 nicht freigegeben | `cluster-mgmt` → 60000:60050 prüfen |
 | Ceph OSD fällt auf `down` | Ceph-Ports blockiert | `ceph-net` → 3300/6789/6800:7300 prüfen |
-| `pve-firewall compile` schlägt fehl | Syntaxfehler | Fehlermeldung auswerten – häufig: `-comment` ohne Anführungszeichen |
+| Security Group greift nicht | `pve-firewall reload` fehlt | `pve-firewall compile && pve-firewall reload` |
 | SSH nach Aktivierung gesperrt | Eigene IP nicht in `mgmt-hosts` | IPMI/iDRAC nutzen → IP nachtragen |
 
 ### Debugging-Befehle
 
 ```bash
-# Firewall-Log (letzte 10 Minuten)
+# Firewall-Log
 journalctl -u pve-firewall --since "10 minutes ago" | tail -50
 
-# iptables – INPUT-Chain
+# iptables INPUT-Chain
 iptables -L INPUT -n -v --line-numbers
 
-# IPsets prüfen – ceph-net zeigt Subnetz-Eintrag, andere Einzeladressen
+# IPsets prüfen
 ipset list cluster-mgmt
 ipset list corosync-ring0
 ipset list ceph-net
 
-# Corosync Ring 0 (ens19 / 10.10.20.x) testen
+# Connectivity-Tests
 nc -vzu 10.10.20.12 5405 && echo "Ring 0: OK" || echo "Ring 0: BLOCKED"
-
-# Corosync Ring 1 (vmbr0 / 172.30.7.x) testen
 nc -vzu 172.30.7.32 5406 && echo "Ring 1: OK" || echo "Ring 1: BLOCKED"
+nc -vz  10.20.20.12 3300 && echo "Ceph MON: OK" || echo "Ceph MON: BLOCKED"
 
-# Ceph-Erreichbarkeit auf Storage-Netz testen
-nc -vz 10.20.20.12 3300 && echo "Ceph MON: OK" || echo "Ceph MON: BLOCKED"
-
-# Ceph-Status nach Firewall-Änderungen
 ceph status
 ceph osd stat
 ```
