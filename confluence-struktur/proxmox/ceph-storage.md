@@ -78,7 +78,13 @@ pveceph init --network 10.20.20.0/24
 cat /etc/ceph/ceph.conf
 ```
 
+> 📸 **Screenshot machen:** Datacenter → Ceph → Configuration-Übersicht direkt nach dem Init (zeigt Public/Cluster Network bereits korrekt auf 10.20.20.0/24 gesetzt) – wichtigster Kontrollpunkt, weil ein falsches Netz hier sich erst spät bemerkbar macht.
+
 ## Schritt 2: Monitore einrichten
+
+Auch über **Web UI: Datacenter → Ceph → Monitor → Add** (auf jedem Node wiederholen).
+
+> 📸 **Screenshot machen:** Datacenter → Ceph → Monitor-Tab mit allen 3 Monitoren im Status "running" – zeigt das Monitor-Quorum visuell, ohne dass man `ceph mon stat` in der Konsole lesen muss.
 
 ```bash
 pveceph mon create
@@ -97,6 +103,10 @@ ceph mgr stat
 
 ## Schritt 4: OSDs erstellen
 
+Auch über **Web UI: Node → Ceph → OSD → Create: OSD** möglich.
+
+> 📸 **Screenshot machen:** Node → Ceph → OSD-Übersicht mit allen 4 OSDs eines Nodes im Status "up/in" inklusive CRUSH-Device-Class-Spalte (hdd/ssd) – gutes Referenzbild für "so soll es nach dem Setup aussehen".
+
 ```bash
 pveceph osd create /dev/sdb --crush-device-class hdd
 pveceph osd create /dev/sdc --crush-device-class hdd
@@ -108,6 +118,10 @@ ceph osd tree
 > `--crush-device-class hdd` klassifiziert die OSD korrekt – bei gemischten SSD/HDD-Setups ermöglicht das class-basierte CRUSH-Regeln.
 
 ## Schritt 5: Pool konfigurieren
+
+Auch über **Web UI: Datacenter → Ceph → Pools → Create** möglich.
+
+> 📸 **Screenshot machen:** Datacenter → Ceph → Pools → Create-Dialog mit `vm-store`, size=3, min_size=2, PG Autoscale Mode = on ausgefüllt – zeigt exakt die VIREQ-Standardwerte, die niemals abweichen sollen.
 
 ```bash
 pveceph pool create vm-store \
@@ -160,6 +174,8 @@ ceph osd perf
 ceph pg stat
 ceph -w
 ```
+
+> 📸 **Screenshot machen:** Datacenter → Ceph → Hauptübersicht mit dem grünen "HEALTH_OK"-Status, der OSD-Map-Grafik und den Pool-Auslastungsbalken – das ist der Screenshot, der bei jedem Kunden-Health-Check als Erstes gezeigt wird.
 
 **Gewünschter Zielstatus:** `health: HEALTH_OK`, alle Monitore in Quorum, alle OSDs `up, in`, alle PGs `active+clean`.
 

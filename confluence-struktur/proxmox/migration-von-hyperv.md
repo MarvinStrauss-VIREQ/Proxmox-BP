@@ -54,6 +54,8 @@ Im Gast: virtio-win-gt-x64.msi ausführen (installiert Storage-, Netzwerk- und B
 QEMU Guest Agent ebenfalls aus dem ISO installieren (Verzeichnis guest-agent)
 ```
 
+> 📸 **Screenshot machen:** Hyper-V Manager → VM Settings → DVD Drive mit eingelegtem virtio-win-ISO, sowie im Gast den VirtIO-Treiber-Installationsassistenten mit der Komponentenauswahl (Storage/Netzwerk/Balloon) – zwei Bilder, die den häufigsten ersten Stolperstein dokumentieren.
+
 > Linux-Gastsysteme bringen VirtIO-Treiber bereits im Kernel mit – dieser Schritt entfällt dort.
 
 ### 2. VM in Hyper-V exportieren
@@ -62,6 +64,8 @@ QEMU Guest Agent ebenfalls aus dem ISO installieren (Verzeichnis guest-agent)
 Hyper-V Manager → VM Rechtsklick → Export
 Die VHDX-Datei liegt anschließend im Export-Verzeichnis unter "Virtual Hard Disks"
 ```
+
+> 📸 **Screenshot machen:** Hyper-V Manager → Export-Dialog mit gewähltem Zielverzeichnis – hilfreich, weil Techniker oft das Zielverzeichnis falsch wählen und die VHDX dann schwer wiederfinden.
 
 ### 3. Disk auf den Proxmox-Host übertragen
 
@@ -91,6 +95,8 @@ qm rescan
 qm set 300 --scsi0 local-lvm:vm-300-disk-0 --scsihw virtio-scsi-single
 qm set 300 --boot order=scsi0
 ```
+
+> 📸 **Screenshot machen:** Die fertig importierte VM → Hardware-Tab in Proxmox mit der eingebundenen Disk (`scsi0`, virtio-scsi-single) – zeigt das Endergebnis von Schritt 4+5 in einem Bild.
 
 ### 6. Erster Boot mit generischen Treibern (Windows-VMs)
 
