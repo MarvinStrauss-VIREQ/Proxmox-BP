@@ -74,6 +74,10 @@ ceph osd set norecover
 
 ### Schritt 4: Update durchführen
 
+Auch über **Web UI: Node → Updates → Refresh, dann Upgrade** möglich (öffnet eine Shell mit den exakt gleichen Befehlen).
+
+> 📸 **Screenshot machen:** Node → Updates-Tab mit der Liste der verfügbaren Pakete vor dem Upgrade – gutes Beweisbild für ein Wartungsprotokoll ("welche Pakete wurden an diesem Tag aktualisiert").
+
 ```bash
 apt update
 apt list --upgradable
@@ -123,6 +127,8 @@ Deutlich größerer Eingriff – zusätzliche Schritte gegenüber dem Routine-Up
 pve8to9 --full
 # Rote Einträge MUESSEN vor dem Upgrade behoben werden, gelbe Warnungen prüfen
 ```
+
+> 📸 **Screenshot machen:** Die vollständige Terminal-Ausgabe von `pve8to9 --full` eines Nodes (oder als Textdatei archivieren) – das ist die wichtigste Dokumentation eines jeden Major-Upgrades und wird bei Rückfragen zum Wartungsprotokoll gebraucht.
 
 Bei Ceph im Einsatz: **vor** dem PVE-Upgrade muss Ceph auf die neue Major-Version (z. B. Reef → Squid) aktualisiert sein. Reihenfolge ist kritisch:
 
@@ -175,6 +181,8 @@ lvcreate -L 10G -s -n root-snap /dev/pve/root
 ```
 Web-UI: Datacenter → Options → E-Mail-Benachrichtigung für verfügbare Updates aktivieren
 ```
+
+> 📸 **Screenshot machen:** Datacenter → Options → die Zeile für Update-Benachrichtigungen mit aktivierter E-Mail-Option – kleiner, aber oft übersehener Schalter.
 
 > Updates sollten **nicht** vollautomatisch eingespielt werden – nur die Benachrichtigung über verfügbare Updates automatisieren, die Durchführung bleibt ein geplanter, manueller Vorgang im Wartungsfenster.
 

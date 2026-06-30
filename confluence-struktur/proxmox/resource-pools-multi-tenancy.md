@@ -58,6 +58,10 @@ Permissions sind pfadbasiert und werden vererbt (`propagate`-Flag); spezifischer
 
 ### 1. Gruppen und Benutzer anlegen
 
+Auch über **Web UI: Datacenter → Permissions → Groups/Users → Add** möglich.
+
+> 📸 **Screenshot machen:** Datacenter → Permissions → Groups → Add-Dialog sowie Users → Add-Dialog – zwei Bilder, weil das die Grundbausteine sind, auf die alles Weitere aufbaut.
+
 ```bash
 pveum group add kunde-a-team --comment "Techniker Kunde A"
 pveum user add techniker-a@pve --password PASSWORT --comment "Techniker Kunde A"
@@ -66,6 +70,10 @@ pveum user modify techniker-a@pve --groups kunde-a-team
 
 ### 2. Resource Pool anlegen und Ressourcen zuordnen
 
+Auch über **Web UI: Datacenter → Permissions → Pools → Create** möglich.
+
+> 📸 **Screenshot machen:** Datacenter → Permissions → Pools → Create-Dialog, sowie direkt danach den geöffneten Pool mit der Mitglieder-Liste (VMs + Storage) – zeigt, wie Ressourcen einem Pool nachträglich hinzugefügt werden.
+
 ```bash
 pveum pool add kunde-a --comment "Alle VMs und Storage von Kunde A"
 pveum pool modify kunde-a --vms 100,101,102
@@ -73,6 +81,8 @@ pveum pool modify kunde-a --storage kunde-a-storage
 ```
 
 ### 3. Berechtigung auf den Pool setzen
+
+> 📸 **Screenshot machen:** Datacenter → Permissions → Add-Dialog mit Pfad `/pool/kunde-a`, Rolle `PVEVMAdmin`, Gruppe `kunde-a-team` – das ist der Dialog, der am häufigsten falsch ausgefüllt wird (Pfad vs. Pool-Auswahl verwechseln).
 
 ```bash
 pveum acl modify /pool/kunde-a --roles PVEVMAdmin --groups kunde-a-team
