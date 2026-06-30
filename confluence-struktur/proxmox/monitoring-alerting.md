@@ -42,9 +42,13 @@ dpkg -i ninja-agent.deb
 systemctl status ninjarmm-agent
 ```
 
+> 📸 **Screenshot machen:** NinjaOne-Konsole → Device-Liste mit dem neu erschienenen PVE-Node (Status "Online", Tags) – bestätigt anschaulich, dass die Registrierung funktioniert hat, bevor man sich um Policies kümmert.
+
 ---
 
 ## 2. NinjaOne Policy für Proxmox-Nodes
+
+> 📸 **Screenshot machen:** NinjaOne → Administration → Policies → eure "Proxmox-Nodes"-Policy mit der Liste der Conditions (CPU, RAM, Disk, Services) – das ist die zentrale Konfigurationsseite, auf die ihr euch später bei jedem neuen Kunden bezieht.
 
 ### Standard-Conditions
 
@@ -77,6 +81,8 @@ NinjaOne bietet offizielle Bash-Skripte für Proxmox im Script Hub, die Daten vi
 | `proxmox_node_status` | "Proxmox Node Monitoring" | Node-ID, Name, IP, Online-Status |
 | `proxmox_vm_info` | "Proxmox VM Information Gathering" | VM-ID, Name, Status, RAM, CPU |
 | `proxmox_storage_status` | "Retrieve Proxmox Node Storage Status" | Storage-Name, Typ, Größe, frei |
+
+> 📸 **Screenshot machen:** Ein PVE-Node-Dashboard in NinjaOne mit ausgefülltem `proxmox_cluster_status`-Custom-Field (zeigt den formatierten `pvecm status`-Output direkt im RMM) – das ist das beste "Vorher/Nachher"-Bild für eine interne Präsentation, weil es zeigt, wie viel Proxmox-Kontext NinjaOne ohne Zusatztools liefert.
 
 ---
 
@@ -124,6 +130,8 @@ PVE Web-UI: Datacenter → Notifications → Add → SMTP
 Host: smtp.office365.com, Port: 587, Mode: STARTTLS
 Username: proxmox-alert@vireq.com
 ```
+
+> 📸 **Screenshot machen:** Datacenter → Notifications → Add-Dialog (SMTP) sowie direkt danach die Liste der Notification Rules – zwei Screenshots, weil Endpoint-Konfiguration und Rule-Matcher häufig verwechselt werden.
 
 ```
 Notification Rules → Add

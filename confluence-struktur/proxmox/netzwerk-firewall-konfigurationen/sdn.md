@@ -64,6 +64,10 @@ apt update && apt install libpve-network-perl   # falls nicht vorhanden
 
 ## Schritt 1: Zone erstellen
 
+Auch über **Web UI: Datacenter → SDN → Zones → Add → VLAN** möglich.
+
+> 📸 **Screenshot machen:** Datacenter → SDN → Zones → Add (VLAN)-Dialog mit ID `vlan-zone` und Bridge `vmbr1` ausgefüllt – das ist der erste Schritt, den jeder neue Techniker bei euch sehen sollte, bevor er VNets anlegt.
+
 ```bash
 pvesh create /cluster/sdn/zones --zone vlan-zone --type vlan --bridge vmbr1
 ```
@@ -75,6 +79,8 @@ pvesh create /cluster/sdn/zones --zone vlan-zone --type vlan --bridge vmbr1
 | `prod-v100` | 100 | Produktivnetz |
 | `mgmt-v200` | 200 | Management |
 | `dmz-v300` | 300 | DMZ |
+
+> 📸 **Screenshot machen:** Datacenter → SDN → VNets → Übersichtsliste mit allen vier VNets (prod/mgmt/dmz/backup) inklusive zugeordneter Zone und VLAN-Tag-Spalte – zeigt auf einen Blick, wie die VLAN-zu-VNet-Zuordnung in der Praxis aussieht.
 
 ```bash
 pvesh create /cluster/sdn/vnets --vnet prod-v100 --zone vlan-zone --tag 100
@@ -99,6 +105,8 @@ pvesh create /cluster/sdn/vnets/prod-v100/subnets \
 for node in pve1 pve2 pve3; do ssh root@$node "pvesh set /cluster/sdn"; done
 ip link show type bridge | grep -E "prod-|mgmt-|dmz-"
 ```
+
+> 📸 **Screenshot machen:** Datacenter → SDN → die Hauptübersichtsseite mit dem grünen "Apply"-Button und der Liste der "Pending Changes" davor – das ist der Moment, in dem viele Anfänger vergessen, dass Änderungen erst nach Apply wirksam werden.
 
 ---
 
