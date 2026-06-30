@@ -75,6 +75,8 @@ IN ACCEPT src=192.168.10.0/24 dport=22   proto=TCP  # SSH
 Node → Firewall → Options → Input Policy: DROP
 ```
 
+> 📸 **Screenshot machen:** Node → Firewall → Options mit Input Policy = DROP – zeigt den kritischsten Schalter der ganzen Seite, bei dem ein Fehler zum Aussperren führen kann.
+
 > ✅ Die PVE-Firewall lässt `established`/`related` automatisch durch.
 
 ---
@@ -86,6 +88,8 @@ Web-UI: root-Account → Two Factor → Add
 Type: TOTP, Issuer: Proxmox VIREQ
 QR-Code mit Authenticator-App scannen (Bitwarden, Authy, Google Authenticator)
 ```
+
+> 📸 **Screenshot machen:** Datacenter → Permissions → Two Factor (oder direkt am User) → Add-Dialog mit dem QR-Code-Schritt (Werte/QR vor dem Speichern unkenntlich machen oder mit einem Test-Account aufnehmen!) – hilft neuen Technikern, den Ablauf nachzuvollziehen, ohne ihn live am Kundensystem zu testen.
 
 ```bash
 pveum user tfa add root@pam --type totp
@@ -106,6 +110,8 @@ Domains → Add: pve01.firma.de
 Plugin: Standalone (Port 80 offen) oder DNS-Plugin
 → Order Certificates
 ```
+
+> 📸 **Screenshot machen:** Node → Certificates → ACME-Tab mit angelegtem ACME-Account und der Domain-Liste vor dem "Order"-Klick – zeigt, wo Standalone vs. DNS-Plugin gewählt wird (häufigste Verwechslung bei Erstkonfiguration).
 
 ### Eigenes Zertifikat (interne CA)
 
@@ -130,6 +136,8 @@ pveum user add techniker1@pve \
 pveum aclmod / --user techniker1@pve --role PVEAdmin
 ```
 
+> 📸 **Screenshot machen:** Datacenter → Permissions → Users → Add-Dialog sowie direkt danach Datacenter → Permissions → Add (ACL) mit Rolle PVEAdmin auf Pfad `/` – zwei Screenshots, weil das in der Praxis die zwei am häufigsten verwechselten Dialoge sind (User anlegen ≠ Berechtigung vergeben).
+
 | Rolle | Beschreibung |
 |---|---|
 | `Administrator` | Alles (= root) |
@@ -149,6 +157,8 @@ pveum user token add monitoring@pve monitoring-token \
 pveum aclmod / --token monitoring@pve!monitoring-token --role PVEAuditor
 # Token-Secret wird einmalig angezeigt – sofort sichern!
 ```
+
+> 📸 **Screenshot machen:** Den einmaligen Token-Secret-Dialog direkt nach dem Anlegen (mit einem Wegwerf-Test-Token, NICHT mit einem echten Secret!) – das ist der wichtigste Moment im ganzen Workflow, weil das Secret danach nie wieder angezeigt wird.
 
 ---
 

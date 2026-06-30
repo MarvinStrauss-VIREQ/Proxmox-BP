@@ -116,6 +116,8 @@ Zusätzlicher Sicherheitsmechanismus: Falls der Watchdog nicht feuert (z. B. Ker
 
 **Web UI:** Datacenter → HA → Fencing → Add
 
+> 📸 **Screenshot machen:** Datacenter → HA → Fencing → Add-Dialog mit ausgefüllten Feldern (Fence Type: IPMI, Node, IPMI Host, User) für einen eurer drei Nodes – zeigt Lesern auf einen Blick, wo das Fencing-Device konfiguriert wird.
+
 | Feld | Wert (Beispiel pve1) |
 |---|---|
 | Fence Type | `IPMI` |
@@ -131,6 +133,10 @@ ipmitool -I lanplus -H <ipmi-ip-pve1> -U root -P <password> power status
 ---
 
 ## Schritt 3: HA-Gruppe erstellen
+
+Alternativ zur CLI auch über **Web UI: Datacenter → HA → Groups → Add** möglich.
+
+> 📸 **Screenshot machen:** Datacenter → HA → Groups → Add-Dialog mit eurer `ha-main`-Gruppe (Nodes mit Priorität pve1:3, pve2:2, pve3:1) – zeigt die Node-Priorisierung visuell, die in der CLI nicht so eindeutig erkennbar ist.
 
 ```bash
 ha-manager groupadd ha-main \
@@ -174,6 +180,10 @@ qm move-disk <vmid> scsi0 vm-store --delete 1
 
 ## Schritt 5: VMs unter HA-Kontrolle stellen
 
+**Web UI:** Datacenter → HA → Add (Resource)
+
+> 📸 **Screenshot machen:** Datacenter → HA → Add-Dialog für eine VM (VM ID, Group: ha-main, State: started, Max. Restart: 3, Max. Relocate: 3) – ideal direkt im Anschluss an einen echten Workflow bei einem Kundenprojekt.
+
 ```bash
 ha-manager add vm:100 --group ha-main --state started --max_restart 3 --max_relocate 3
 ha-manager status
@@ -203,6 +213,10 @@ ipmitool -I lanplus -H <ipmi-ip-pve1> -U root -P <password> power on
 ---
 
 ## HA-Status Monitoring
+
+Auch als Web UI verfügbar: **Datacenter → HA → Status**
+
+> 📸 **Screenshot machen:** Datacenter → HA → Status-Übersicht während des Normalbetriebs (zeigt CRM-Master, LRM-Status aller Nodes, laufende HA-Ressourcen) – am besten direkt nach einem erfolgreichen Failover-Test, damit man den "vorher/nachher"-Zustand dokumentieren kann.
 
 ```bash
 ha-manager status
