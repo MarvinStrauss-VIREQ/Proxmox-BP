@@ -64,6 +64,8 @@ for g in $(find /sys/kernel/iommu_groups/* -maxdepth 0 -type d | sort -V); do
 done
 ```
 
+> 📸 **Screenshot machen:** Die Terminal-Ausgabe dieses Befehls für eure Standard-Hardware (am besten als Textdatei/Codeblock-Screenshot archivieren) – nicht zwingend ein Web-UI-Bild, aber wichtig als Referenz, welche IOMMU-Gruppierung eure Referenz-Server haben, bevor neue Hardware bestellt wird.
+
 > Liegen mehrere unabhängige Geräte in derselben Gruppe wie die GPU, müssen alle zusammen durchgereicht werden – oder die GPU in einen anderen PCIe-Slot stecken, der eine saubere Gruppierung ermöglicht. Ein ACS-Override-Patch (`pcie_acs_override=downstream,multifunction`) kann als letztes Mittel helfen, hat aber Isolations-Nachteile und sollte bewusst gewählt werden.
 
 ## Schritt 3: GPU isolieren (VFIO statt Host-Treiber)
@@ -117,6 +119,8 @@ qm set <vmid> --cpu host
 qm set <vmid> --hostpci0 01:00,pcie=1,x-vga=1
 ```
 
+> 📸 **Screenshot machen:** VM → Hardware → Add → PCI Device-Dialog mit ausgewählter GPU, "All Functions" aktiviert, "PCI-Express" aktiviert – die zentrale Konfigurationsseite für diesen gesamten Workflow.
+
 | Option | Bedeutung |
 |---|---|
 | `x-vga=1` | markiert das Gerät als primäre GPU der VM |
@@ -152,6 +156,8 @@ nvidia-smi   # bei korrekt installiertem Treiber im Gast
 - **Boot-Test:** VM startet ohne Fehler, kein "Out of Memory"/BAR-Fehler bei großem VRAM
 - **Bildausgabe:** bei `x-vga=1` Monitor direkt an die durchgereichte Karte anschließen – die Proxmox-Konsole zeigt diese VM danach nicht mehr an
 - **Reboot-Test:** VM innerhalb der VM neu starten, bevor produktiv gegangen wird – manche ältere GPUs (z. B. AMD Polaris/Vega) initialisieren sich nach einem Soft-Reset nicht zuverlässig neu
+
+> 📸 **Screenshot machen:** Innerhalb der VM die `nvidia-smi`-Ausgabe (oder `lspci | grep -i vga` bei AMD) mit erkannter Karte und korrekter VRAM-Anzeige – der finale Beweis, dass Passthrough erfolgreich funktioniert.
 
 ---
 

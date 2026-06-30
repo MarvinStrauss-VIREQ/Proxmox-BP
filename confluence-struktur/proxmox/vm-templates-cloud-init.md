@@ -75,6 +75,8 @@ qm set 9000 --serial0 socket --vga serial0
 qm set 9000 --agent enabled=1
 ```
 
+> 📸 **Screenshot machen:** VM 9000 → Hardware-Tab nach diesem Schritt – zeigt scsi0 (Disk), ide2 (CD/DVD Drive, "cloudinit"), serial0 – das ist die Referenzkonfiguration, die jede Template-VM bei euch haben soll.
+
 ### 4. Disk vergrößern
 
 Cloud-Images liefern kleine Disks (2–3 GB) – vor dem Templating auf die gewünschte Standardgröße erweitern. Cloud-Init vergrößert das Dateisystem beim ersten Boot automatisch passend zur Disk:
@@ -95,9 +97,17 @@ qm set 9000 --nameserver 192.168.1.1
 qm set 9000 --searchdomain vireq.local
 ```
 
+Auch direkt im Web UI einstellbar: **VM 9000 → Cloud-Init-Tab**
+
+> 📸 **Screenshot machen:** VM 9000 → Cloud-Init-Tab mit ausgefülltem User, SSH-Public-Key-Feld, IP Config (DHCP), DNS-Domain – der zentrale Konfigurationsscreen, der bei jedem neuen Template wiederkehrt.
+
 > SSH-Key-Authentifizierung wird gegenüber Passwort empfohlen – Proxmox muss bei Passwort-Auth eine verschlüsselte Version davon in den Cloud-Init-Daten speichern.
 
 ### 6. In Template umwandeln
+
+Auch über **Web UI: Rechtsklick auf die VM → Convert to Template** möglich.
+
+> 📸 **Screenshot machen:** Die VM-Liste im Proxmox-Web-UI mit dem geänderten Icon nach der Umwandlung (Template-Symbol statt normales VM-Symbol) – zeigt, woran man ein Template auf den ersten Blick erkennt.
 
 ```bash
 qm template 9000
@@ -116,6 +126,10 @@ qm clone 9000 101 --name web-server-01 --full
 # Linked Clone: teilt sich die Basis-Disk, schneller und platzsparender, aber abhängig vom Template
 qm clone 9000 102 --name dev-server-01
 ```
+
+Auch über **Web UI: Rechtsklick auf das Template → Clone** möglich.
+
+> 📸 **Screenshot machen:** Den Clone-Dialog mit der Checkbox "Full Clone" einmal aktiviert und einmal deaktiviert (zwei Bilder oder eines mit Pfeil-Markierung) – das ist der Punkt, an dem am häufigsten versehentlich der falsche Klon-Typ gewählt wird.
 
 ```bash
 # Pro Klon individuell anpassen
